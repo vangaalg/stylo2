@@ -1,0 +1,7 @@
+{
+  "name": "StyleGenie AI Try-On",
+  "description": "Virtual closet and try-on assistant using Gemini AI.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

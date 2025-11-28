@@ -1,0 +1,47 @@
+import { createClient } from '@supabase/supabase-js';
+
+// Access variables directly so Vite can perform static replacement via 'define' in vite.config.ts
+// @ts-ignore
+const supabaseUrl = process.env.SUPABASE_URL;
+// @ts-ignore
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+// Strict check to ensure values are actually strings and not undefined/null
+export const isSupabaseConfigured = 
+  typeof supabaseUrl === 'string' && 
+  supabaseUrl.length > 0 &&
+  typeof supabaseAnonKey === 'string' && 
+  supabaseAnonKey.length > 0;
+
+let client;
+
+if (isSupabaseConfigured) {
+  try {
+    // We cast to string because the if-check guarantees they are strings
+    client = createClient(supabaseUrl as string, supabaseAnonKey as string);
+  } catch (error) {
+    console.error("Supabase client initialization failed:", error);
+    client = createMockClient(); 
+  }
+} else {
+  console.warn("Supabase credentials missing or invalid! App running in offline/mock mode.");
+  client = createMockClient();
+}
+
+function createMockClient() {
+  return {
+    auth: {
+      getSession: async () => ({ data: { session: null }, error: null }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => {} } } }),
+      signUp: async () => ({ error: { message: "Supabase not configured" } }),
+      signInWithPassword: async () => ({ error: { message: "Supabase not configured" } }),
+      signOut: async () => ({ error: null }),
+    },
+    from: () => ({
+      select: () => ({ eq: () => ({ single: async () => ({ data: null, error: { message: "DB not configured" } }) }) }),
+      update: () => ({ eq: async () => ({ error: { message: "DB not configured" } }) }),
+    })
+  } as any;
+}
+
+export const supabase = client;
