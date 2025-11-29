@@ -232,6 +232,35 @@ export const removeFaceFromClothingImage = async (clothBase64: string): Promise<
 };
 
 
+export const enhanceStylePrompt = async (userPrompt: string): Promise<string> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash-exp",
+      contents: {
+        parts: [
+          {
+            text: `Enhance this user photo description into a high-quality AI image generation prompt.
+            
+            User Input: "${userPrompt}"
+            
+            Rules:
+            1. Keep the core location and elements (e.g., "Marine Drive", "Mercedes Benz").
+            2. Add professional photography details: "Full body shot from head to toe", "Wide angle composition", "Cinematic lighting", "High fashion photography style".
+            3. CRITICAL: Add "Face must be front-facing", "Shoes must be visible".
+            4. Make it descriptive and atmospheric.
+            5. Output ONLY the prompt string, no explanations.`
+          }
+        ]
+      }
+    });
+
+    return response.text || userPrompt;
+  } catch (error) {
+    console.error("Prompt enhancement failed", error);
+    return userPrompt; // Fallback to original
+  }
+};
+
 export const generateTryOnImage = async (
   userBase64: string,
   clothBase64: string,

@@ -90,6 +90,11 @@ export const STYLES: GenerationStyle[] = [
     name: "Anime Hero",
     promptSuffix: "Full body shot from head to toe. Wide angle composition. Studio Ghibli art style. Hand-painted background of a lush, magical meadow with fluffy clouds. The subject is drawn as the main anime protagonist but wearing the exact real clothing. Whimsical, peaceful, artistic. Soft cel-shaded coloring. Face looking straight at camera. Shoes visible. Face must be front-facing.",
     synopsis: "Transformed into the hero of a magical Studio Ghibli anime."
+  },
+  {
+    name: "Custom Creation",
+    promptSuffix: "CUSTOM", // Placeholder, will be replaced dynamically
+    synopsis: "Create your own unique scene with a custom description."
   }
 ];
 

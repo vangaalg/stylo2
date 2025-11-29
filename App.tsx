@@ -6,7 +6,8 @@ import {
   analyzeUserFace, 
   analyzeClothItem, 
   generateTryOnImage,
-  removeFaceFromClothingImage
+  removeFaceFromClothingImage,
+  enhanceStylePrompt
 } from './services/geminiService';
 import { deductCredits, addCredits, getUserHistory, uploadImageToStorage, saveHistoryItem } from './services/userService';
 import { swapFaceWithReplicate } from './services/replicateService'; // Added import
@@ -47,6 +48,7 @@ const App: React.FC = () => {
   // Manual overrides
   const [manualClothType, setManualClothType] = useState<string>('');
   const [manualColor, setManualColor] = useState<string>('');
+  const [customPromptText, setCustomPromptText] = useState<string>('');
   
   // User details
   const [userAge, setUserAge] = useState<string>('');
@@ -519,10 +521,17 @@ const App: React.FC = () => {
   const handleRegenerate = async (index: number) => {
     if (!userImage || !clothImage || !userAnalysis || !user || index < 0 || index >= STYLES.length) return;
     
-    // Cost check for manual unlocks/regeneration
-    // If the image status is undefined (locked) or failed/done (regeneration), we charge.
-    // We'll assume 1 credit for Fast, 2 for Quality (as discussed in plan, though not strictly enforced yet in code, let's add basic check)
+    // 2. We'll assume 1 credit for Fast, 2 for Quality (as discussed in plan, though not strictly enforced yet in code, let's add basic check)
     const cost = qualityMode === 'quality' ? 2 : 1;
+    
+    const style = STYLES[index];
+    const styleName = style.name;
+
+    // Check for custom creation prompt
+    if (styleName === "Custom Creation" && !customPromptText.trim()) {
+      alert("Please enter a description for your custom style.");
+      return;
+    }
     
     // If it's a regeneration (already done/failed) OR an unlock (undefined status)
     // We should check credits.
@@ -531,9 +540,6 @@ const App: React.FC = () => {
         return;
     }
 
-    const style = STYLES[index];
-    const styleName = style.name;
-    
     // Deduct credits if not admin
     if (!user.isAdmin) {
        try {
@@ -577,13 +583,21 @@ const App: React.FC = () => {
     if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
 
     try {
+      // Determine prompt suffix
+      let finalPromptSuffix = style.promptSuffix;
+      
+      // If custom, enhance the prompt first
+      if (styleName === "Custom Creation") {
+        finalPromptSuffix = await enhanceStylePrompt(customPromptText);
+      }
+
       // 1. Gemini Step
       const generatedImage = await generateTryOnImage(
         userImage, 
         clothImage, 
         userDesc, 
         clothDesc, 
-        style.promptSuffix,
+        finalPromptSuffix, // Use the enhanced prompt
         (msg) => {}, 
         clothAnalysis?.hasFaceInImage || false,
         qualityMode
@@ -961,23 +975,55 @@ const App: React.FC = () => {
                  {isLocked ? (
                     // LOCKED STATE
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-zinc-900/80 backdrop-blur-sm">
-                       <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center mb-3 border border-zinc-700 group-hover:border-indigo-500 transition-colors">
-                         <svg className="w-6 h-6 text-zinc-500 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                         </svg>
-                       </div>
-                       <h4 className="text-white font-bold text-sm mb-1">{style.name}</h4>
-                       <p className="text-xs text-zinc-400 mb-4 line-clamp-2">{style.synopsis}</p>
-                       <button 
-                         onClick={(e) => {
-                           e.stopPropagation();
-                           handleRegenerate(idx);
-                         }}
-                         className="bg-white text-black px-4 py-2 rounded-full text-xs font-bold hover:bg-indigo-500 hover:text-white transition shadow-lg flex items-center gap-1"
-                       >
-                         <span>Generate</span>
-                         <span className="bg-black/10 px-1.5 rounded text-[10px]">{qualityMode === 'quality' ? '2' : '1'} Cr</span>
-                       </button>
+                       {style.name === "Custom Creation" ? (
+                         <div className="w-full flex flex-col items-center h-full justify-between">
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mb-2 shadow-lg">
+                              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                              </svg>
+                            </div>
+                            <h4 className="text-white font-bold text-sm mb-2">Custom Creation</h4>
+                            
+                            <textarea 
+                              className="w-full flex-1 bg-zinc-950/50 border border-zinc-700 rounded-lg p-2 text-xs text-zinc-300 placeholder-zinc-600 resize-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent mb-2"
+                              placeholder="e.g., I want my photo at Mumbai Marine Drive with a Mercedes Benz C-Class..."
+                              value={customPromptText}
+                              onChange={(e) => setCustomPromptText(e.target.value)}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            
+                            <button 
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 handleRegenerate(idx);
+                               }}
+                               className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:from-indigo-500 hover:to-purple-500 transition shadow-lg flex items-center justify-center gap-1"
+                             >
+                               <span>Enhance & Generate</span>
+                               <span className="bg-black/20 px-1.5 rounded text-[9px]">{qualityMode === 'quality' ? '2' : '1'} Cr</span>
+                             </button>
+                         </div>
+                       ) : (
+                         <>
+                           <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center mb-3 border border-zinc-700 group-hover:border-indigo-500 transition-colors">
+                             <svg className="w-6 h-6 text-zinc-500 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                             </svg>
+                           </div>
+                           <h4 className="text-white font-bold text-sm mb-1">{style.name}</h4>
+                           <p className="text-xs text-zinc-400 mb-4 line-clamp-2">{style.synopsis}</p>
+                           <button 
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               handleRegenerate(idx);
+                             }}
+                             className="bg-white text-black px-4 py-2 rounded-full text-xs font-bold hover:bg-indigo-500 hover:text-white transition shadow-lg flex items-center gap-1"
+                           >
+                             <span>Generate</span>
+                             <span className="bg-black/10 px-1.5 rounded text-[10px]">{qualityMode === 'quality' ? '2' : '1'} Cr</span>
+                           </button>
+                         </>
+                       )}
                     </div>
                  ) : (
                    // GENERATED / PROCESSING STATE
