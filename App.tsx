@@ -341,8 +341,8 @@ const App: React.FC = () => {
 
   const startGenerationFlow = () => {
     if (!userImage || !clothImage || !userAnalysis || !user) return;
-    const COST = 3;
-    if (!user.isAdmin && user.credits < COST) {
+    const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
+    if (!user.isAdmin && user.credits < AUTO_GEN_COST) {
       setShowPayment(true);
       return;
     }
@@ -358,8 +358,8 @@ const App: React.FC = () => {
       Notification.requestPermission();
     }
 
-    const COST = 3;
-    if (!user.isAdmin && user.credits < COST) {
+    const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
+    if (!user.isAdmin && user.credits < AUTO_GEN_COST) {
       setShowPayment(true);
       return;
     }
