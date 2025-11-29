@@ -22,7 +22,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        version: process.env.REPLICATE_MODEL_VERSION || "9a4298548422074c3f57258c5d544497314ae4112df80d116f0d2109e843d20d",
+        model: "codeplugtech/face-swap:278a81e7",
         input: {
           source_image: sourceImage,
           target_image: targetImage,
