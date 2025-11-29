@@ -8,7 +8,7 @@ import {
   generateTryOnImage,
   removeFaceFromClothingImage
 } from './services/geminiService';
-import { deductCredits, addCredits } from './services/userService';
+import { deductCredits, addCredits, getUserHistory, uploadImageToStorage, saveHistoryItem } from './services/userService';
 import { swapFaceWithReplicate } from './services/replicateService'; // Added import
 import { 
   AppStep, 
@@ -63,12 +63,70 @@ const App: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<{url: string, style: string} | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
+  // History State
+  const [history, setHistory] = useState<{url: string, style: string, date: string}[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showWaitModal, setShowWaitModal] = useState(false);
+
   // UI State
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Wake Lock for preventing device sleep during generation
   const wakeLockRef = useRef<any>(null);
+
+  // Load history from Supabase on mount (if user exists)
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (user?.id) {
+        const remoteHistory = await getUserHistory(user.id);
+        if (remoteHistory && remoteHistory.length > 0) {
+          setHistory(remoteHistory);
+        } else {
+          // Fallback to local storage if no remote history (or offline)
+          const savedHistory = localStorage.getItem('styleGenieHistory');
+          if (savedHistory) {
+            try {
+              setHistory(JSON.parse(savedHistory));
+            } catch (e) { console.error(e); }
+          }
+        }
+      }
+    };
+    loadHistory();
+  }, [user?.id]);
+
+  // Save history helper (Supabase + Local Fallback)
+  const addToHistory = async (newImage: {url: string, style: string}) => {
+    // 1. Optimistic Update (Temporary)
+    const tempItem = { ...newImage, date: new Date().toISOString() };
+    setHistory(prev => [tempItem, ...prev].slice(0, 20)); // Keep last 20 in UI
+
+    // 2. Persist to Supabase (Background)
+    if (user?.id) {
+      try {
+        // Upload image to storage
+        const publicUrl = await uploadImageToStorage(user.id, newImage.url);
+        
+        if (publicUrl) {
+          // Save metadata to DB
+          await saveHistoryItem(user.id, publicUrl, newImage.style);
+          
+          // Update state with permanent URL
+          setHistory(prev => prev.map(item => 
+            item.url === newImage.url ? { ...item, url: publicUrl } : item
+          ));
+        }
+      } catch (err) {
+        console.error("Failed to save history to Supabase", err);
+        // Fallback to local storage
+        const savedHistory = localStorage.getItem('styleGenieHistory');
+        const current = savedHistory ? JSON.parse(savedHistory) : [];
+        const updated = [tempItem, ...current].slice(0, 5);
+        localStorage.setItem('styleGenieHistory', JSON.stringify(updated));
+      }
+    }
+  };
 
   // Request notification permission on mount and cleanup on unmount
   useEffect(() => {
@@ -84,6 +142,12 @@ const App: React.FC = () => {
     };
     
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Check URL for history view
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('view') === 'history') {
+      setShowHistory(true);
+    }
     
     // Cleanup wake lock on unmount
     return () => {
@@ -120,14 +184,29 @@ const App: React.FC = () => {
 
   // Send notification when generation is complete
   const sendCompletionNotification = () => {
+    // Play notification sound
+    try {
+      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+      audio.play().catch(e => console.log("Audio play failed", e));
+    } catch (e) {
+      console.log("Audio setup failed", e);
+    }
+
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('StyleGenie - Generation Complete! 🎉', {
+      const notification = new Notification('StyleGenie - Generation Complete! 🎉', {
         body: 'Your lookbook is ready! Click to view your 3 amazing styles.',
         icon: '/favicon.ico',
         badge: '/favicon.ico',
         tag: 'generation-complete',
-        requireInteraction: true
+        requireInteraction: true,
+        data: { url: window.location.origin + '?view=history' }
       });
+      
+      notification.onclick = function(event) {
+        event.preventDefault(); // prevent the browser from focusing the Notification's tab
+        window.open(window.location.origin + '?view=history', '_self');
+        notification.close();
+      };
     }
   };
 
@@ -258,8 +337,24 @@ const App: React.FC = () => {
     }
   };
 
-  const handleGenerate = async () => {
+  const startGenerationFlow = () => {
     if (!userImage || !clothImage || !userAnalysis || !user) return;
+    const COST = 3;
+    if (!user.isAdmin && user.credits < COST) {
+      setShowPayment(true);
+      return;
+    }
+    setShowWaitModal(true);
+  };
+
+  const handleGenerate = async (backgroundMode: boolean = false) => {
+    if (!userImage || !clothImage || !userAnalysis || !user) return;
+    
+    setShowWaitModal(false);
+    
+    if (backgroundMode && 'Notification' in window) {
+      Notification.requestPermission();
+    }
 
     const COST = 3;
     if (!user.isAdmin && user.credits < COST) {
@@ -365,6 +460,9 @@ const App: React.FC = () => {
                  newImages[index] = { style: style.name, url: finalImage, status: 'done' };
                  return newImages;
                });
+               
+               // Save to history
+               addToHistory({ url: finalImage, style: style.name });
             } catch (swapError) {
                console.error(`Face swap failed for ${style.name} (background)`, swapError);
                // Keep the Gemini image if swap fails
@@ -473,6 +571,9 @@ const App: React.FC = () => {
         newImages[index] = { style: styleName, url: finalImage, status: 'done' };
         return newImages;
       });
+      
+      // Save to history
+      addToHistory({ url: finalImage, style: styleName });
 
     } catch (err) {
       console.error(`Regeneration failed for ${styleName}:`, err);
@@ -731,7 +832,7 @@ const App: React.FC = () => {
             Back
           </button>
           <button 
-            onClick={handleGenerate}
+            onClick={startGenerationFlow}
             className="flex-[2] bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-indigo-900/20 transform transition hover:-translate-y-1 flex justify-center items-center gap-2"
           >
             <span>Generate Lookbook</span>
@@ -1015,7 +1116,7 @@ const App: React.FC = () => {
             <div className="space-y-2">
               <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Navigation</p>
               <button onClick={() => {setStep(AppStep.UPLOAD_USER); setIsSidebarOpen(false);}} className="block w-full text-left text-zinc-300 hover:text-white py-2">Start New Look</button>
-              <button onClick={() => { /* Add gallery/history logic here */ setIsSidebarOpen(false);}} className="block w-full text-left text-zinc-300 hover:text-white py-2">My History</button>
+              <button onClick={() => { setShowHistory(true); setIsSidebarOpen(false); }} className="block w-full text-left text-zinc-300 hover:text-white py-2">My History</button>
             </div>
             
             <div className="space-y-2">
@@ -1055,6 +1156,88 @@ const App: React.FC = () => {
           onClose={() => setShowPayment(false)} 
           onSuccess={handlePaymentSuccess} 
         />
+      )}
+
+      {/* Wait Option Modal */}
+      {showWaitModal && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 w-full max-w-md p-6 text-center space-y-6">
+            <div className="w-16 h-16 rounded-full bg-indigo-500/20 flex items-center justify-center mx-auto">
+              <svg className="w-8 h-8 text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white mb-2">Start Generation?</h3>
+              <p className="text-zinc-400 text-sm">
+                Creating your custom high-quality lookbook typically takes <span className="text-white font-bold">2-5 minutes</span>.
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <button 
+                onClick={() => handleGenerate(false)}
+                className="w-full bg-zinc-800 text-white py-3 rounded-xl font-semibold hover:bg-zinc-700 transition border border-zinc-700"
+              >
+                I'll Wait Here
+              </button>
+              <button 
+                onClick={() => handleGenerate(true)}
+                className="w-full bg-gradient-to-r from-indigo-600 to-pink-600 text-white py-3 rounded-xl font-semibold hover:opacity-90 transition shadow-lg shadow-indigo-500/20"
+              >
+                Notify Me When Done
+              </button>
+            </div>
+            <button onClick={() => setShowWaitModal(false)} className="text-xs text-zinc-500 hover:text-zinc-300 underline">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {/* History Modal */}
+      {showHistory && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">My History</h2>
+              <button onClick={() => setShowHistory(false)} className="text-zinc-400 hover:text-white">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              {history.length === 0 ? (
+                <div className="text-center py-12 text-zinc-500">
+                  <p>No saved looks yet.</p>
+                  <p className="text-sm mt-1">Generate some photos to see them here!</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                  {history.map((item, idx) => (
+                    <div key={idx} className="relative group rounded-xl overflow-hidden bg-zinc-800 aspect-[3/4]">
+                      <img src={item.url} alt={item.style} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center gap-2">
+                        <p className="text-xs text-white font-medium">{item.style}</p>
+                        <button 
+                          onClick={() => downloadImage(item.url, `history-${idx}.png`)}
+                          className="bg-white text-black p-2 rounded-full hover:bg-zinc-200"
+                          title="Download"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="mt-6 text-center text-xs text-zinc-500">
+                Auto-saves last 5 generated styles
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showCamera && (
