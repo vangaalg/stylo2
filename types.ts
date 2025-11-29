@@ -17,6 +17,9 @@ export interface UserAnalysis {
   isFace: boolean;
   gender: Gender;
   description: string;
+  hairStyle: string;
+  hairColor: string;
+  hairLength: string;
 }
 
 export interface ClothAnalysis {
@@ -25,6 +28,10 @@ export interface ClothAnalysis {
   color: string;
   pattern: string;
   hasFaceInImage: boolean;
+  texture: string;
+  fit: string;
+  neckline: string;
+  sleeveLength: string;
 }
 
 export interface GenerationStyle {
@@ -43,7 +50,7 @@ export const STYLES: GenerationStyle[] = [
   },
   {
     name: "Supermodel Walk",
-    promptSuffix: "Full body shot from head to toe. Wide angle composition. Supermodel walking pose, face looking straight ahead directly at camera. Dynamic stride, confident energy, fashion week street background. Shoes must be visible. Face must be front-facing, not in profile."
+    promptSuffix: "Full body shot from head to toe. Wide angle composition. Supermodel walking pose, face looking straight ahead directly at camera. Dynamic stride, confident energy, fashion week street background. Shoes must be visible. Face must be front-facing, not in profile. Person is wearing stylish designer sunglasses (e.g., Wayfarer or Aviator) that perfectly match the face shape."
   }
 ];
 

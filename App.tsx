@@ -280,16 +280,24 @@ const App: React.FC = () => {
     // Activate wake lock to prevent device from sleeping
     await requestWakeLock();
 
-    const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
-    const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
-    
-    // Build user description with age, height, and weight
+    // Build user description with age, height, weight, and hair details
     let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
     if (userAge) userDesc += `, age ${userAge}`;
     if (userHeight) userDesc += `, height ${userHeight}`;
     if (userWeight) userDesc += `, weight ${userWeight}`;
     
-    const clothDesc = `${finalClothType}, ${finalColor}, ${clothAnalysis?.pattern}`;
+    // Add hair details if available
+    if (userAnalysis.hairStyle) userDesc += `, Hair: ${userAnalysis.hairStyle}, ${userAnalysis.hairColor}, ${userAnalysis.hairLength}`;
+    
+    const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
+    const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
+    
+    // Add detailed cloth analysis
+    let clothDesc = `${finalClothType}, ${finalColor}, ${clothAnalysis?.pattern}`;
+    if (clothAnalysis?.texture) clothDesc += `, Material: ${clothAnalysis.texture}`;
+    if (clothAnalysis?.fit) clothDesc += `, Fit: ${clothAnalysis.fit}`;
+    if (clothAnalysis?.neckline) clothDesc += `, Neckline: ${clothAnalysis.neckline}`;
+    if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
 
     try {
       // Deduct credits upfront
@@ -400,6 +408,79 @@ const App: React.FC = () => {
       
       // Release wake lock when generation is complete
       await releaseWakeLock();
+    }
+  };
+
+  const handleRegenerate = async (index: number) => {
+    if (!userImage || !clothImage || !userAnalysis || !user || index < 0 || index >= STYLES.length) return;
+    
+    const style = STYLES[index];
+    const styleName = style.name;
+    
+    // Update status to regenerating
+    setGeneratedImages(prev => {
+      const newImages = [...prev];
+      // Ensure the array is large enough (it should be if we're regenerating)
+      if (!newImages[index]) {
+         newImages[index] = { style: styleName, url: '', status: 'regenerating' };
+      } else {
+         newImages[index] = { ...newImages[index], status: 'regenerating' };
+      }
+      return newImages;
+    });
+
+    // Build descriptions again (in case state changed, though likely same)
+    let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
+    if (userAge) userDesc += `, age ${userAge}`;
+    if (userHeight) userDesc += `, height ${userHeight}`;
+    if (userWeight) userDesc += `, weight ${userWeight}`;
+    if (userAnalysis.hairStyle) userDesc += `, Hair: ${userAnalysis.hairStyle}, ${userAnalysis.hairColor}, ${userAnalysis.hairLength}`;
+
+    const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
+    const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
+    let clothDesc = `${finalClothType}, ${finalColor}, ${clothAnalysis?.pattern}`;
+    if (clothAnalysis?.texture) clothDesc += `, Material: ${clothAnalysis.texture}`;
+    if (clothAnalysis?.fit) clothDesc += `, Fit: ${clothAnalysis.fit}`;
+    if (clothAnalysis?.neckline) clothDesc += `, Neckline: ${clothAnalysis.neckline}`;
+    if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
+
+    try {
+      // 1. Gemini Step
+      const generatedImage = await generateTryOnImage(
+        userImage, 
+        clothImage, 
+        userDesc, 
+        clothDesc, 
+        style.promptSuffix,
+        (msg) => {}, 
+        clothAnalysis?.hasFaceInImage || false,
+        qualityMode
+      );
+
+      // Update to swapping state
+      setGeneratedImages(prev => {
+        const newImages = [...prev];
+        newImages[index] = { style: styleName, url: generatedImage, status: 'swapping' };
+        return newImages;
+      });
+
+      // 2. Replicate Step
+      const finalImage = await swapFaceWithReplicate(userImage, generatedImage);
+
+      // Success
+      setGeneratedImages(prev => {
+        const newImages = [...prev];
+        newImages[index] = { style: styleName, url: finalImage, status: 'done' };
+        return newImages;
+      });
+
+    } catch (err) {
+      console.error(`Regeneration failed for ${styleName}:`, err);
+      setGeneratedImages(prev => {
+        const newImages = [...prev];
+        newImages[index] = { style: styleName, url: '', status: 'failed' };
+        return newImages;
+      });
     }
   };
 
@@ -721,16 +802,22 @@ const App: React.FC = () => {
           {generatedImages.map((img, idx) => {
              // Check status for UI feedback
              const isSwapping = img.status === 'swapping';
+             const isRegenerating = img.status === 'regenerating';
              const isFailed = img.status === 'failed';
+             const isDoneWithError = img.status === 'done_with_error';
+             
+             // Show regenerate button if failed, done with error, or even if done (user option)
+             // But prominently for failures
+             const showRegenerate = isFailed || isDoneWithError || img.status === 'done';
 
              return (
             <div 
               key={idx} 
               className="group relative rounded-2xl overflow-hidden bg-zinc-800 shadow-2xl border border-zinc-700/50 animate-fade-in cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
-              onClick={() => img.url && setSelectedImage({url: img.url, style: img.style})}
+              onClick={() => img.url && !isFailed && setSelectedImage({url: img.url, style: img.style})}
             >
               <div className="aspect-[3/4] overflow-hidden relative">
-                 {img.url ? (
+                 {img.url && !isRegenerating ? (
                    <>
                    <img src={img.url} alt={img.style} className={`w-full h-full object-cover transform transition duration-700 ${isSwapping ? 'blur-sm scale-105' : 'group-hover:scale-105'}`} />
                    {isSwapping && (
@@ -743,30 +830,82 @@ const App: React.FC = () => {
                    )}
                    </>
                  ) : (
-                   <div className="flex items-center justify-center h-full bg-red-900/20">
-                     <span className="text-xs text-red-400">Failed to generate</span>
+                   <div className="flex items-center justify-center h-full bg-zinc-900 relative">
+                     {isRegenerating ? (
+                        <div className="text-center">
+                          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                          <p className="text-xs text-indigo-400 font-medium">Regenerating...</p>
+                        </div>
+                     ) : (
+                        <div className="flex flex-col items-center text-red-400">
+                          <svg className="w-12 h-12 mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                          <span className="text-xs">Generation Failed</span>
+                        </div>
+                     )}
                    </div>
                  )}
               </div>
-              <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+              
+              <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none">
                 <span className="inline-block px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-medium border border-white/20">
                   {img.style}
                 </span>
               </div>
-              {img.url && !isSwapping && (
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    downloadImage(img.url, `try-on-${img.style}.png`);
-                  }}
-                  className="absolute right-4 bottom-4 px-4 py-2 bg-white text-black rounded-full shadow-lg hover:bg-zinc-200 transition-all flex items-center gap-2 font-medium text-sm"
-                  title="Download Image"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  Download
-                </button>
+              
+              {/* Action Buttons */}
+              <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto">
+                  {/* Download Button */}
+                  {img.url && !isSwapping && !isRegenerating && !isFailed && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        downloadImage(img.url, `try-on-${img.style}.png`);
+                      }}
+                      className="p-2 bg-white text-black rounded-full shadow-lg hover:bg-zinc-200 transition-all"
+                      title="Download"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                    </button>
+                  )}
+                  
+                  {/* Regenerate Button */}
+                  {showRegenerate && !isSwapping && !isRegenerating && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRegenerate(idx);
+                      }}
+                      className={`p-2 rounded-full shadow-lg transition-all ${isFailed ? 'bg-indigo-600 text-white hover:bg-indigo-500 animate-pulse' : 'bg-black/50 text-white hover:bg-black/80 backdrop-blur-md'}`}
+                      title="Regenerate"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                    </button>
+                  )}
+              </div>
+              
+              {/* Explicit Regenerate Button for Failed State in Center if needed, but top right is cleaner. 
+                  Let's add a center button specifically for failed state to be very obvious */}
+              {isFailed && !isRegenerating && (
+                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRegenerate(idx);
+                      }}
+                      className="pointer-events-auto bg-indigo-600 text-white px-4 py-2 rounded-full font-semibold shadow-xl hover:bg-indigo-500 transition transform hover:scale-105 flex items-center gap-2"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Regenerate
+                    </button>
+                 </div>
               )}
             </div>
           )})}

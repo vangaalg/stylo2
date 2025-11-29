@@ -91,7 +91,7 @@ export const analyzeUserFace = async (base64Image: string): Promise<UserAnalysis
             },
           },
           {
-            text: "Analyze this image. Does it contain a clear human face? What is the apparent gender? Provide a short description of hair, skin tone, and body type.",
+            text: "Analyze this image. Does it contain a clear human face? What is the apparent gender? Provide a short description. Also analyze hair details: style (curly, straight, wavy, bald, etc), color (black, blonde, brown, etc), and length (short, medium, long, etc).",
           },
         ],
       },
@@ -103,8 +103,11 @@ export const analyzeUserFace = async (base64Image: string): Promise<UserAnalysis
             isFace: { type: Type.BOOLEAN },
             gender: { type: Type.STRING, enum: [Gender.MALE, Gender.FEMALE, Gender.OTHER] },
             description: { type: Type.STRING },
+            hairStyle: { type: Type.STRING },
+            hairColor: { type: Type.STRING },
+            hairLength: { type: Type.STRING },
           },
-          required: ["isFace", "gender", "description"],
+          required: ["isFace", "gender", "description", "hairStyle", "hairColor", "hairLength"],
         },
       },
     });
@@ -135,7 +138,7 @@ export const analyzeClothItem = async (base64Image: string): Promise<ClothAnalys
             },
           },
           {
-            text: "Analyze this image. Is it a clothing item? If so, what type (shirt, pant, dress, suit, etc.)? Be very specific about the color (e.g. 'emerald green' instead of 'green', 'navy blue' instead of 'blue') and pattern. Also detect if there is a person's face visible in this image (hasFaceInImage should be true if any face is visible, false otherwise).",
+            text: "Analyze this image. Is it a clothing item? If so, what type (shirt, pant, dress, suit, etc.)? Be very specific about the color (e.g. 'emerald green' instead of 'green', 'navy blue' instead of 'blue') and pattern (floral, striped, solid, etc). Also analyze fabric texture (denim, silk, cotton, wool, etc), fit (loose, tight, oversized, etc), neckline (V-neck, round, collar, etc), and sleeve length (long, short, sleeveless, etc). Detect if there is a person's face visible.",
           },
         ],
       },
@@ -149,8 +152,12 @@ export const analyzeClothItem = async (base64Image: string): Promise<ClothAnalys
             color: { type: Type.STRING },
             pattern: { type: Type.STRING },
             hasFaceInImage: { type: Type.BOOLEAN },
+            texture: { type: Type.STRING },
+            fit: { type: Type.STRING },
+            neckline: { type: Type.STRING },
+            sleeveLength: { type: Type.STRING },
           },
-          required: ["isClothing", "clothingType", "color", "pattern", "hasFaceInImage"],
+          required: ["isClothing", "clothingType", "color", "pattern", "hasFaceInImage", "texture", "fit", "neckline", "sleeveLength"],
         },
       },
     });
@@ -265,8 +272,8 @@ export const generateTryOnImage = async (
       - The final person must be clearly identifiable as the person from Image 1.
       
       Subject Details:
-      - Person: ${userDescription} (Keep face, hair, and body type consistent with Image 1. Ensure body proportions match the specified age and height if provided).
-      - Clothing: ${clothDescription} (Use this to verify color accuracy).
+      - Person: ${userDescription}
+      - Clothing: ${clothDescription} (CRITICAL: Match material, texture, pattern, and fit exactly).
       
       Style: ${styleSuffix}
       
