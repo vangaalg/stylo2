@@ -3,13 +3,15 @@ import React, { useRef, useState, useEffect } from 'react';
 interface CameraCaptureProps {
   onCapture: (base64: string) => void;
   onCancel: () => void;
+  defaultCamera?: 'user' | 'environment';
 }
 
-export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel }) => {
+export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCancel, defaultCamera = 'user' }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string>('');
+  const [facingMode, setFacingMode] = useState<'user' | 'environment'>(defaultCamera);
 
   useEffect(() => {
     let currentStream: MediaStream | null = null;
@@ -19,9 +21,9 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCance
       try {
         let mediaStream: MediaStream;
         try {
-           // First try preferred settings (front camera)
+           // Try with specified facing mode
            mediaStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { facingMode: 'user' }, 
+            video: { facingMode: facingMode }, 
             audio: false 
           });
         } catch (firstError) {
@@ -61,7 +63,7 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCance
         currentStream.getTracks().forEach(track => track.stop());
       }
     };
-  }, []);
+  }, [facingMode]);
 
   const handleCapture = () => {
     if (videoRef.current && canvasRef.current) {
@@ -81,6 +83,15 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCance
         onCapture(dataUrl);
       }
     }
+  };
+
+  const handleSwitchCamera = () => {
+    // Stop current stream before switching
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+    }
+    // Toggle between front and rear camera
+    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
   };
 
   return (
@@ -109,6 +120,22 @@ export const CameraCapture: React.FC<CameraCaptureProps> = ({ onCapture, onCance
             className="w-full h-[60vh] object-cover bg-black"
           />
           <canvas ref={canvasRef} className="hidden" />
+          
+          {/* Camera Switch Button & Indicator - Top Right */}
+          <div className="absolute top-4 right-4 flex flex-col items-end gap-2">
+            <button 
+              onClick={handleSwitchCamera}
+              className="text-white bg-zinc-700/70 hover:bg-zinc-600 p-3 rounded-full backdrop-blur-sm transition shadow-lg"
+              title="Switch Camera"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+            <span className="text-xs text-white/80 bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">
+              {facingMode === 'user' ? '🤳 Front' : '📷 Rear'}
+            </span>
+          </div>
           
           <div className="absolute bottom-0 left-0 right-0 p-6 flex justify-between items-center bg-gradient-to-t from-black/80 to-transparent">
             <button 

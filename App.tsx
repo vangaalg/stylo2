@@ -1,11 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { CameraCapture } from './components/CameraCapture';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { PaymentModal } from './components/PaymentModal';
 import { 
   analyzeUserFace, 
   analyzeClothItem, 
-  generateTryOnImage 
+  generateTryOnImage,
+  removeFaceFromClothingImage
 } from './services/geminiService';
 import { deductCredits, addCredits } from './services/userService';
 import { 
@@ -45,12 +46,80 @@ const App: React.FC = () => {
   // Manual overrides
   const [manualClothType, setManualClothType] = useState<string>('');
   const [manualColor, setManualColor] = useState<string>('');
+  
+  // User details
+  const [userAge, setUserAge] = useState<string>('');
+  const [userHeight, setUserHeight] = useState<string>('');
 
   const [generatedImages, setGeneratedImages] = useState<{style: string, url: string}[]>([]);
   
   // UI State
   const [showCamera, setShowCamera] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Wake Lock for preventing device sleep during generation
+  const wakeLockRef = useRef<any>(null);
+
+  // Request notification permission on mount and cleanup on unmount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    
+    // Re-acquire wake lock when page becomes visible again
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && wakeLockRef.current !== null && isLoading) {
+        await requestWakeLock();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Cleanup wake lock on unmount
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLockRef.current) {
+        wakeLockRef.current.release().catch(() => {});
+      }
+    };
+  }, [isLoading]);
+
+  // Wake Lock functions
+  const requestWakeLock = async () => {
+    try {
+      if ('wakeLock' in navigator) {
+        wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        console.log('Wake Lock activated - device will stay awake during generation');
+      }
+    } catch (err) {
+      console.warn('Wake Lock not supported or failed:', err);
+    }
+  };
+
+  const releaseWakeLock = async () => {
+    if (wakeLockRef.current) {
+      try {
+        await wakeLockRef.current.release();
+        wakeLockRef.current = null;
+        console.log('Wake Lock released');
+      } catch (err) {
+        console.warn('Failed to release wake lock:', err);
+      }
+    }
+  };
+
+  // Send notification when generation is complete
+  const sendCompletionNotification = () => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('StyleGenie - Generation Complete! 🎉', {
+        body: 'Your lookbook is ready! Click to view your 3 amazing styles.',
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        tag: 'generation-complete',
+        requireInteraction: true
+      });
+    }
+  };
 
   // --- Handlers ---
 
@@ -96,14 +165,14 @@ const App: React.FC = () => {
     try {
       const analysis = await analyzeUserFace(base64);
       if (!analysis.isFace) {
-        setError("No clear face detected. Please upload a clear photo of yourself.");
+        setError("❌ No clear face detected! Please upload a photo showing your face clearly. Make sure your face is well-lit and visible in the photo.");
         setUserImage(null);
       } else {
         setUserAnalysis(analysis);
         setStep(AppStep.UPLOAD_CLOTH);
       }
     } catch (err) {
-      setError("Failed to analyze image. Please try again.");
+      setError("⚠️ Failed to analyze image. Please try again with a clear face photo.");
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -131,16 +200,26 @@ const App: React.FC = () => {
     try {
       const analysis = await analyzeClothItem(base64);
       if (!analysis.isClothing) {
-        setError("That doesn't look like clothing. Please try again.");
+        setError("❌ This doesn't look like clothing! Please upload a photo of a dress, shirt, pants, or any clothing item you want to try on.");
         setClothImage(null);
       } else {
         setClothAnalysis(analysis);
         setManualClothType(analysis.clothingType);
         setManualColor(analysis.color);
+        
+        // If face detected in clothing image, clean it
+        if (analysis.hasFaceInImage) {
+          setLoadingMessage("Detected face in clothing image. Cleaning...");
+          const cleanedImage = await removeFaceFromClothingImage(base64);
+          setClothImage(cleanedImage);
+          // Show info message to user
+          setError("ℹ️ We detected a face in the clothing image and cleaned it. Only your face from the first photo will be used.");
+        }
+        
         setStep(AppStep.CONFIRMATION);
       }
     } catch (err) {
-      setError("Failed to analyze clothing. Please try again.");
+      setError("⚠️ Failed to analyze clothing. Please try again with a clear clothing photo.");
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -162,30 +241,24 @@ const App: React.FC = () => {
     setLoadingMessage("Initializing Stylist...");
     setError(null);
 
+    // Activate wake lock to prevent device from sleeping
+    await requestWakeLock();
+
     const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
     const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
     
-    const userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
+    // Build user description with age and height if provided
+    let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
+    if (userAge) userDesc += `, age ${userAge}`;
+    if (userHeight) userDesc += `, height ${userHeight}`;
+    
     const clothDesc = `${finalClothType}, ${finalColor}, ${clothAnalysis?.pattern}`;
 
     try {
-      // Parallel generation
-      const promises = STYLES.map(async (style: GenerationStyle) => {
-        const url = await generateTryOnImage(
-          userImage, 
-          clothImage, 
-          userDesc, 
-          clothDesc, 
-          style.promptSuffix,
-          (msg) => setLoadingMessage(msg)
-        );
-        return { style: style.name, url };
-      });
-
-      const results = await Promise.all(promises);
-      setGeneratedImages(results);
+      // Show results screen immediately to display progress
+      setStep(AppStep.RESULTS);
       
-      // Deduct credits
+      // Deduct credits upfront
       if (!user.isAdmin) {
          if (user.id === 'test-guest-id') {
            // Mock deduction for testing
@@ -196,14 +269,43 @@ const App: React.FC = () => {
            setUser({ ...user, credits: newBalance });
          }
       }
-
-      setStep(AppStep.RESULTS);
+      
+      // Sequential generation - show each image as it completes
+      for (let index = 0; index < STYLES.length; index++) {
+        const style = STYLES[index];
+        try {
+          setLoadingMessage(`Generating ${style.name} (${index + 1}/${STYLES.length})...`);
+          const url = await generateTryOnImage(
+            userImage, 
+            clothImage, 
+            userDesc, 
+            clothDesc, 
+            style.promptSuffix,
+            (msg) => setLoadingMessage(`${style.name}: ${msg}`),
+            clothAnalysis?.hasFaceInImage || false
+          );
+          
+          // Add this image to the results as soon as it's ready
+          setGeneratedImages(prev => [...prev, { style: style.name, url }]);
+        } catch (err) {
+          console.error(`Failed to generate ${style.name}:`, err);
+          // Add placeholder for failed image
+          setGeneratedImages(prev => [...prev, { style: style.name, url: '' }]);
+        }
+      }
+      
+      // Send notification when all images are complete
+      sendCompletionNotification();
+      
     } catch (err) {
       setError("Generation failed. The model might be busy or the request invalid. Try again.");
       setStep(AppStep.CONFIRMATION);
     } finally {
       setIsLoading(false);
       setLoadingMessage("");
+      
+      // Release wake lock when generation is complete
+      await releaseWakeLock();
     }
   };
 
@@ -217,6 +319,8 @@ const App: React.FC = () => {
     setError(null);
     setManualClothType('');
     setManualColor('');
+    setUserAge('');
+    setUserHeight('');
   };
 
   // --- Render Steps ---
@@ -345,12 +449,53 @@ const App: React.FC = () => {
         </div>
       </div>
 
+      {/* User Details Section */}
+      <div className="bg-zinc-800/30 p-6 rounded-xl border border-zinc-700 space-y-4">
+        <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Additional Details</h3>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-xs text-zinc-400 block">Age</label>
+            <input 
+              type="text" 
+              value={userAge}
+              onChange={(e) => setUserAge(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition text-white placeholder-zinc-600"
+              placeholder="e.g. 25"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-zinc-400 block">Height</label>
+            <input 
+              type="text" 
+              value={userHeight}
+              onChange={(e) => setUserHeight(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition text-white placeholder-zinc-600"
+              placeholder="e.g. 5'8&quot; or 173cm"
+            />
+          </div>
+        </div>
+      </div>
+
       <div className="pt-6 border-t border-zinc-800 space-y-3">
         {(!user?.isAdmin && user!.credits < 3) && (
             <div className="text-center text-yellow-500 text-sm mb-2">
                 ⚠️ Insufficient credits for 3 styles. Please top up.
             </div>
         )}
+        
+        {/* Background processing info */}
+        <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-3 text-xs text-indigo-300">
+          <div className="flex items-start gap-2">
+            <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+            <div>
+              <p className="font-medium mb-1">Background Generation Enabled</p>
+              <p className="text-indigo-400/80">Your device will stay awake during generation. You'll receive a notification when all 3 styles are ready, even if your screen is locked.</p>
+            </div>
+          </div>
+        </div>
+        
         <button 
           onClick={handleGenerate}
           className="w-full bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-indigo-900/20 transform transition hover:-translate-y-1 flex justify-center items-center gap-2"
@@ -378,27 +523,57 @@ const App: React.FC = () => {
     </div>
   );
 
-  const renderResults = () => (
-    <div className="space-y-8 animate-fade-in">
-      <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">Your Lookbook</h2>
-        <button 
-          onClick={handleReset}
-          className="text-sm text-zinc-400 hover:text-white underline decoration-zinc-600 underline-offset-4"
-        >
-          Start Over
-        </button>
-      </div>
+  const renderResults = () => {
+    const totalStyles = STYLES.length;
+    const loadedCount = generatedImages.length;
+    const isStillGenerating = isLoading && loadedCount < totalStyles;
+    
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
+            Your Lookbook {isStillGenerating && `(${loadedCount}/${totalStyles})`}
+          </h2>
+          <button 
+            onClick={handleReset}
+            className="text-sm text-zinc-400 hover:text-white underline decoration-zinc-600 underline-offset-4"
+          >
+            Start Over
+          </button>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {generatedImages.map((img, idx) => (
-          <div key={idx} className="group relative rounded-2xl overflow-hidden bg-zinc-800 shadow-2xl border border-zinc-700/50">
-            <div className="aspect-[3/4] overflow-hidden">
-               <img src={img.url} alt={img.style} className="w-full h-full object-cover transform transition duration-700 group-hover:scale-105" />
+        {isStillGenerating && (
+          <div className="space-y-3">
+            <div className="bg-indigo-900/30 border border-indigo-500/40 rounded-xl p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+                  <div>
+                    <p className="text-sm font-medium text-indigo-300">Generation in Progress</p>
+                    <p className="text-xs text-indigo-400/80 mt-0.5">{loadingMessage || "Creating your styles..."}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-indigo-400/60">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                  </svg>
+                  <span>Device stays awake</span>
+                </div>
+              </div>
             </div>
-            <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
-              <span className="inline-block px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-medium border border-white/20">
-                {img.style}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Show generated images */}
+          {generatedImages.map((img, idx) => (
+            <div key={idx} className="group relative rounded-2xl overflow-hidden bg-zinc-800 shadow-2xl border border-zinc-700/50 animate-fade-in">
+              <div className="aspect-[3/4] overflow-hidden">
+                 <img src={img.url} alt={img.style} className="w-full h-full object-cover transform transition duration-700 group-hover:scale-105" />
+              </div>
+              <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
+                <span className="inline-block px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-medium border border-white/20">
+                  {img.style}
               </span>
               <a 
                 href={img.url} 
@@ -413,9 +588,22 @@ const App: React.FC = () => {
             </div>
           </div>
         ))}
+        
+        {/* Show loading placeholders for images still generating */}
+        {isStillGenerating && Array.from({ length: totalStyles - loadedCount }).map((_, idx) => (
+          <div key={`loading-${idx}`} className="relative rounded-2xl overflow-hidden bg-zinc-800/50 shadow-2xl border border-zinc-700/50 animate-pulse">
+            <div className="aspect-[3/4] flex items-center justify-center bg-zinc-900/50">
+              <div className="text-center space-y-3">
+                <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto"></div>
+                <p className="text-zinc-500 text-sm">Generating {STYLES[loadedCount + idx]?.name}...</p>
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white selection:bg-indigo-500/30">
@@ -439,7 +627,8 @@ const App: React.FC = () => {
               processClothImage(base64);
             }
           }} 
-          onCancel={() => setShowCamera(false)} 
+          onCancel={() => setShowCamera(false)}
+          defaultCamera={step === AppStep.UPLOAD_CLOTH ? 'environment' : 'user'}
         />
       )}
 

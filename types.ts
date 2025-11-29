@@ -24,6 +24,7 @@ export interface ClothAnalysis {
   clothingType: string;
   color: string;
   pattern: string;
+  hasFaceInImage: boolean;
 }
 
 export interface GenerationStyle {
@@ -34,15 +35,15 @@ export interface GenerationStyle {
 export const STYLES: GenerationStyle[] = [
   {
     name: "Red Carpet Wedding",
-    promptSuffix: "Full body shot from head to toe. Wide angle composition. High-glamour wedding gala entrance, paparazzi camera flashes illuminating the subject, red carpet event atmosphere, cinematic lighting, elegant pose, crowd in background blurred. Shoes must be visible."
+    promptSuffix: "Full body shot from head to toe. Wide angle composition. High-glamour wedding gala entrance, paparazzi camera flashes illuminating the subject, red carpet event atmosphere, cinematic lighting, elegant pose with face looking directly at camera, crowd in background blurred. Shoes must be visible. Face must be front-facing."
   },
   {
     name: "Studio Editorial",
-    promptSuffix: "Full body shot from head to toe. Wide angle composition. Professional fashion studio photography, neutral grey background, softbox lighting, high fashion pose, sharp focus, 8k resolution, vogue magazine style. Shoes must be visible."
+    promptSuffix: "Full body shot from head to toe. Wide angle composition. Professional fashion studio photography, neutral grey background, softbox lighting, high fashion pose with face looking directly at camera, sharp focus, 8k resolution, vogue magazine style. Shoes must be visible. Face must be front-facing."
   },
   {
     name: "Supermodel Walk",
-    promptSuffix: "Full body shot from head to toe. Wide angle composition. Supermodel walking pose, looking to the side profile. Dynamic stride, confident energy, fashion week street background. Shoes must be visible."
+    promptSuffix: "Full body shot from head to toe. Wide angle composition. Supermodel walking pose, face looking straight ahead directly at camera. Dynamic stride, confident energy, fashion week street background. Shoes must be visible. Face must be front-facing, not in profile."
   }
 ];
 
