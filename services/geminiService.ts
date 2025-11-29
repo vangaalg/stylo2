@@ -137,7 +137,7 @@ export const analyzeClothItem = async (base64Image: string): Promise<ClothAnalys
 export const removeFaceFromClothingImage = async (clothBase64: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
-      model: "imagen-3",
+      model: "gemini-3.0-pro-image",
       contents: {
         parts: [
           {
@@ -232,7 +232,7 @@ export const generateTryOnImage = async (
     `;
 
     const response = await ai.models.generateContent({
-      model: "imagen-3",
+      model: "gemini-3.0-pro-image",
       contents: {
         parts: [
           {
