@@ -9,6 +9,7 @@ import {
   removeFaceFromClothingImage
 } from './services/geminiService';
 import { deductCredits, addCredits } from './services/userService';
+import { swapFaceWithReplicate } from './services/replicateService'; // Added import
 import { 
   AppStep, 
   UserAnalysis, 
@@ -50,8 +51,17 @@ const App: React.FC = () => {
   // User details
   const [userAge, setUserAge] = useState<string>('');
   const [userHeight, setUserHeight] = useState<string>('');
+  const [userWeight, setUserWeight] = useState<string>(''); // Added Weight State
 
-  const [generatedImages, setGeneratedImages] = useState<{style: string, url: string}[]>([]);
+  const [generatedImages, setGeneratedImages] = useState<{style: string, url: string, status?: string}[]>([]);
+  const [loadedCount, setLoadedCount] = useState(0); // Track loaded count
+  const [isStillGenerating, setIsStillGenerating] = useState(false); // Track generation status
+  const [currentProcessingIndex, setCurrentProcessingIndex] = useState<number>(-1);
+  const [processStage, setProcessStage] = useState<string>(""); // "generating" | "swapping"
+  const [progressPercent, setProgressPercent] = useState<number>(0);
+  const [qualityMode, setQualityMode] = useState<'fast' | 'quality'>('fast'); // Default to fast
+  const [selectedImage, setSelectedImage] = useState<{url: string, style: string} | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // UI State
   const [showCamera, setShowCamera] = useState(false);
@@ -118,6 +128,27 @@ const App: React.FC = () => {
         tag: 'generation-complete',
         requireInteraction: true
       });
+    }
+  };
+
+  // Helper function to force download
+  const downloadImage = async (url: string, filename: string) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Download failed:", error);
+      // Fallback to opening in new tab
+      window.open(url, '_blank');
     }
   };
 
@@ -236,10 +267,15 @@ const App: React.FC = () => {
       return;
     }
     
-    setStep(AppStep.GENERATING);
+    setStep(AppStep.RESULTS); // Move to results immediately
     setIsLoading(true);
+    setIsStillGenerating(true);
     setLoadingMessage("Initializing Stylist...");
     setError(null);
+    setGeneratedImages([]); // Clear previous images
+    setLoadedCount(0);
+    setCurrentProcessingIndex(0);
+    setProgressPercent(0);
 
     // Activate wake lock to prevent device from sleeping
     await requestWakeLock();
@@ -247,17 +283,15 @@ const App: React.FC = () => {
     const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
     const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
     
-    // Build user description with age and height if provided
+    // Build user description with age, height, and weight
     let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
     if (userAge) userDesc += `, age ${userAge}`;
     if (userHeight) userDesc += `, height ${userHeight}`;
+    if (userWeight) userDesc += `, weight ${userWeight}`;
     
     const clothDesc = `${finalClothType}, ${finalColor}, ${clothAnalysis?.pattern}`;
 
     try {
-      // Show results screen immediately to display progress
-      setStep(AppStep.RESULTS);
-      
       // Deduct credits upfront
       if (!user.isAdmin) {
          if (user.id === 'test-guest-id') {
@@ -270,29 +304,87 @@ const App: React.FC = () => {
          }
       }
       
-      // Sequential generation - show each image as it completes
+      // Pipelined Generation
+      // We maintain an array of promises for Replicate tasks to ensure we don't block Gemini loop
+      const replicateTasks: Promise<void>[] = [];
+
       for (let index = 0; index < STYLES.length; index++) {
         const style = STYLES[index];
+        
+        // Update UI to show we are working on this style (and potential background work on others)
+        setCurrentProcessingIndex(index);
+        setProcessStage("generating"); // Phase 1 starts
+        setProgressPercent(10); // Started
+
         try {
-          setLoadingMessage(`Generating ${style.name} (${index + 1}/${STYLES.length})...`);
-          const url = await generateTryOnImage(
+          // 1. Gemini Step (Blocking - we wait for this to keep order and rate limits safe)
+          setLoadingMessage(`Creating base style for ${style.name}...`);
+          
+          const generatedImage = await generateTryOnImage(
             userImage, 
             clothImage, 
             userDesc, 
             clothDesc, 
             style.promptSuffix,
-            (msg) => setLoadingMessage(`${style.name}: ${msg}`),
-            clothAnalysis?.hasFaceInImage || false
+            (msg) => {}, // No verbose logs to avoid flicker
+            clothAnalysis?.hasFaceInImage || false,
+            qualityMode // Pass selected quality mode
           );
           
-          // Add this image to the results as soon as it's ready
-          setGeneratedImages(prev => [...prev, { style: style.name, url }]);
+          // 2. Trigger Replicate Step (Non-blocking for next loop iteration, but tracked for UI)
+          // We start the Replicate process but DO NOT await it here.
+          // Instead, we attach a "then" handler to update the UI when it finishes later.
+          
+          // Initial state for this image: "Generating" done, "Swapping" started
+          setGeneratedImages(prev => {
+             const newImages = [...prev];
+             // Store the Gemini image first (so user sees something immediately)
+             newImages[index] = { style: style.name, url: generatedImage, status: 'swapping' }; 
+             return newImages;
+          });
+          
+          // Increment count so the next placeholder shows "Waiting" or "Generating" correctly
+          setLoadedCount(prev => Math.max(prev, index + 1));
+
+          const replicateTask = (async () => {
+            try {
+               // This runs in background
+               const finalImage = await swapFaceWithReplicate(userImage, generatedImage);
+               
+               // Update UI with final image
+               setGeneratedImages(prev => {
+                 const newImages = [...prev];
+                 newImages[index] = { style: style.name, url: finalImage, status: 'done' };
+                 return newImages;
+               });
+            } catch (swapError) {
+               console.error(`Face swap failed for ${style.name} (background)`, swapError);
+               // Keep the Gemini image if swap fails
+               setGeneratedImages(prev => {
+                 const newImages = [...prev];
+                 newImages[index] = { style: style.name, url: generatedImage, status: 'done_with_error' };
+                 return newImages;
+               });
+            }
+          })();
+          
+          replicateTasks.push(replicateTask);
+
         } catch (err) {
           console.error(`Failed to generate ${style.name}:`, err);
-          // Add placeholder for failed image
-          setGeneratedImages(prev => [...prev, { style: style.name, url: '' }]);
+          // Mark as failed
+          setGeneratedImages(prev => {
+             const newImages = [...prev];
+             newImages[index] = { style: style.name, url: '', status: 'failed' };
+             return newImages;
+          });
+          setLoadedCount(prev => Math.max(prev, index + 1));
         }
       }
+
+      // Wait for all background Replicate tasks to finish before declaring "Complete"
+      setLoadingMessage("Finalizing all images...");
+      await Promise.all(replicateTasks);
       
       // Send notification when all images are complete
       sendCompletionNotification();
@@ -302,6 +394,8 @@ const App: React.FC = () => {
       setStep(AppStep.CONFIRMATION);
     } finally {
       setIsLoading(false);
+      setIsStillGenerating(false);
+      setCurrentProcessingIndex(-1);
       setLoadingMessage("");
       
       // Release wake lock when generation is complete
@@ -321,6 +415,8 @@ const App: React.FC = () => {
     setManualColor('');
     setUserAge('');
     setUserHeight('');
+    setUserWeight('');
+    setCurrentProcessingIndex(-1);
   };
 
   // --- Render Steps ---
@@ -335,6 +431,11 @@ const App: React.FC = () => {
         </div>
         <h3 className="text-xl font-semibold mb-2">Upload Your Photo</h3>
         <p className="text-zinc-400 mb-6 text-sm">Clear face photo, good lighting.</p>
+        
+        <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-3 mb-6 text-xs text-indigo-300 text-left">
+          <p className="font-bold mb-1">💡 Tip for Best Results:</p>
+          <p>Please upload high-quality, clear photos of your face and the clothing. The AI result depends heavily on the clarity and lighting of your uploaded pictures.</p>
+        </div>
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <button 
@@ -399,6 +500,18 @@ const App: React.FC = () => {
           className="hidden" 
         />
       </div>
+
+      <div className="flex justify-center">
+        <button 
+          onClick={() => setStep(AppStep.UPLOAD_USER)}
+          className="text-sm text-zinc-500 hover:text-zinc-300 flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-zinc-900 transition"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Face Upload
+        </button>
+      </div>
     </div>
   );
 
@@ -449,10 +562,10 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* User Details Section */}
+      {/* User Details Section with Weight & Quality */}
       <div className="bg-zinc-800/30 p-6 rounded-xl border border-zinc-700 space-y-4">
         <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Additional Details</h3>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div className="space-y-1">
             <label className="text-xs text-zinc-400 block">Age</label>
             <input 
@@ -470,8 +583,41 @@ const App: React.FC = () => {
               value={userHeight}
               onChange={(e) => setUserHeight(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition text-white placeholder-zinc-600"
-              placeholder="e.g. 5'8&quot; or 173cm"
+              placeholder="e.g. 5'8"
             />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-zinc-400 block">Weight</label>
+            <input 
+              type="text" 
+              value={userWeight}
+              onChange={(e) => setUserWeight(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition text-white placeholder-zinc-600"
+              placeholder="e.g. 60 kg"
+            />
+          </div>
+        </div>
+        
+        {/* Quality Selection */}
+        <div className="pt-4 border-t border-zinc-700/50">
+          <div className="flex items-start gap-3">
+            <div className="flex items-center h-5">
+              <input
+                id="quality-mode"
+                type="checkbox"
+                checked={qualityMode === 'quality'}
+                onChange={(e) => setQualityMode(e.target.checked ? 'quality' : 'fast')}
+                className="w-4 h-4 text-indigo-600 bg-zinc-900 border-zinc-600 rounded focus:ring-indigo-500 focus:ring-2"
+              />
+            </div>
+            <div className="text-sm">
+              <label htmlFor="quality-mode" className="font-medium text-zinc-300 cursor-pointer">High Quality Mode</label>
+              <p className="text-zinc-500 text-xs mt-1">
+                {qualityMode === 'quality' 
+                  ? "⚠️ Uses Gemini 3 Pro (Slower). Takes 2-3 minutes per photo but produces higher detail."
+                  : "⚡ Uses Gemini 2.5 Flash (Fast). Generates quickly but with less detail."}
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -496,15 +642,23 @@ const App: React.FC = () => {
           </div>
         </div>
         
-        <button 
-          onClick={handleGenerate}
-          className="w-full bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-indigo-900/20 transform transition hover:-translate-y-1 flex justify-center items-center gap-2"
-        >
-          <span>Generate Lookbook</span>
-          {!user?.isAdmin && (
-             <span className="bg-black/20 text-xs px-2 py-1 rounded-full">Cost: 3 Credits</span>
-          )}
-        </button>
+        <div className="flex gap-4">
+          <button 
+            onClick={() => setStep(AppStep.UPLOAD_CLOTH)}
+            className="flex-1 bg-zinc-800 text-white py-4 rounded-xl font-bold text-lg hover:bg-zinc-700 transition border border-zinc-700"
+          >
+            Back
+          </button>
+          <button 
+            onClick={handleGenerate}
+            className="flex-[2] bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-indigo-900/20 transform transition hover:-translate-y-1 flex justify-center items-center gap-2"
+          >
+            <span>Generate Lookbook</span>
+            {!user?.isAdmin && (
+               <span className="bg-black/20 text-xs px-2 py-1 rounded-full">Cost: 3 Credits</span>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -525,8 +679,6 @@ const App: React.FC = () => {
 
   const renderResults = () => {
     const totalStyles = STYLES.length;
-    const loadedCount = generatedImages.length;
-    const isStillGenerating = isLoading && loadedCount < totalStyles;
     
     return (
       <div className="space-y-8 animate-fade-in">
@@ -565,49 +717,200 @@ const App: React.FC = () => {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* Show generated images */}
-          {generatedImages.map((img, idx) => (
-            <div key={idx} className="group relative rounded-2xl overflow-hidden bg-zinc-800 shadow-2xl border border-zinc-700/50 animate-fade-in">
-              <div className="aspect-[3/4] overflow-hidden">
-                 <img src={img.url} alt={img.style} className="w-full h-full object-cover transform transition duration-700 group-hover:scale-105" />
+        {/* Show generated images */}
+          {generatedImages.map((img, idx) => {
+             // Check status for UI feedback
+             const isSwapping = img.status === 'swapping';
+             const isFailed = img.status === 'failed';
+
+             return (
+            <div 
+              key={idx} 
+              className="group relative rounded-2xl overflow-hidden bg-zinc-800 shadow-2xl border border-zinc-700/50 animate-fade-in cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
+              onClick={() => img.url && setSelectedImage({url: img.url, style: img.style})}
+            >
+              <div className="aspect-[3/4] overflow-hidden relative">
+                 {img.url ? (
+                   <>
+                   <img src={img.url} alt={img.style} className={`w-full h-full object-cover transform transition duration-700 ${isSwapping ? 'blur-sm scale-105' : 'group-hover:scale-105'}`} />
+                   {isSwapping && (
+                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                       <div className="text-center">
+                         <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                         <p className="text-xs text-white font-medium shadow-black drop-shadow-md">Refining Face...</p>
+                       </div>
+                     </div>
+                   )}
+                   </>
+                 ) : (
+                   <div className="flex items-center justify-center h-full bg-red-900/20">
+                     <span className="text-xs text-red-400">Failed to generate</span>
+                   </div>
+                 )}
               </div>
               <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent">
                 <span className="inline-block px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-medium border border-white/20">
                   {img.style}
-              </span>
-              <a 
-                href={img.url} 
-                download={`try-on-${img.style}.png`}
-                className="absolute right-4 bottom-4 p-2 bg-white text-black rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-zinc-200"
-                title="Download"
-              >
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-              </a>
-            </div>
-          </div>
-        ))}
-        
-        {/* Show loading placeholders for images still generating */}
-        {isStillGenerating && Array.from({ length: totalStyles - loadedCount }).map((_, idx) => (
-          <div key={`loading-${idx}`} className="relative rounded-2xl overflow-hidden bg-zinc-800/50 shadow-2xl border border-zinc-700/50 animate-pulse">
-            <div className="aspect-[3/4] flex items-center justify-center bg-zinc-900/50">
-              <div className="text-center space-y-3">
-                <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto"></div>
-                <p className="text-zinc-500 text-sm">Generating {STYLES[loadedCount + idx]?.name}...</p>
+                </span>
               </div>
+              {img.url && !isSwapping && (
+                <button 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    downloadImage(img.url, `try-on-${img.style}.png`);
+                  }}
+                  className="absolute right-4 bottom-4 px-4 py-2 bg-white text-black rounded-full shadow-lg hover:bg-zinc-200 transition-all flex items-center gap-2 font-medium text-sm"
+                  title="Download Image"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download
+                </button>
+              )}
             </div>
-          </div>
-        ))}
+          )})}
+          
+          {/* Show placeholders for remaining/processing images */}
+          {isStillGenerating && Array.from({ length: totalStyles - loadedCount }).map((_, idx) => {
+            const actualIndex = loadedCount + idx;
+            const isCurrent = actualIndex === currentProcessingIndex;
+            const styleName = STYLES[actualIndex]?.name;
+
+            return (
+              <div key={`loading-${idx}`} className={`relative rounded-2xl overflow-hidden bg-zinc-800/50 shadow-2xl border ${isCurrent ? 'border-indigo-500/50 ring-1 ring-indigo-500/30' : 'border-zinc-700/50'} animate-pulse`}>
+                <div className="aspect-[3/4] flex items-center justify-center bg-zinc-900/50 relative">
+                  {isCurrent ? (
+                    <div className="text-center space-y-4 w-full px-6">
+                      <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto"></div>
+                      
+                      <div>
+                        <p className="text-white font-medium text-sm mb-1">{styleName}</p>
+                        <p className="text-indigo-400 text-xs mb-3">
+                          {processStage === 'generating' ? 'Creating style...' : 'Refining face...'}
+                        </p>
+                        
+                        {/* Progress Bar */}
+                        <div className="w-full h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-indigo-500 transition-all duration-500"
+                            style={{ width: `${progressPercent}%` }}
+                          />
+                        </div>
+                        <p className="text-zinc-500 text-[10px] mt-1 text-right">{progressPercent}%</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center space-y-2 opacity-50">
+                      <div className="w-12 h-12 rounded-full bg-zinc-800 border border-zinc-700 mx-auto flex items-center justify-center">
+                        <span className="text-zinc-500 text-xs font-bold">{idx + 1}</span>
+                      </div>
+                      <p className="text-zinc-600 text-xs">Waiting...</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
-    </div>
     );
   };
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white selection:bg-indigo-500/30">
       
+      {/* Detail View Modal */}
+      {selectedImage && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="relative w-full max-w-4xl h-full max-h-[90vh] flex flex-col">
+            <div className="absolute top-4 right-4 z-10 flex gap-4">
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  downloadImage(selectedImage.url, `try-on-${selectedImage.style}.png`);
+                }}
+                className="bg-white text-black px-6 py-2 rounded-full font-semibold hover:bg-zinc-200 transition flex items-center gap-2 shadow-lg"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Download
+              </button>
+              <button 
+                onClick={() => setSelectedImage(null)}
+                className="bg-black/50 text-white p-3 rounded-full hover:bg-black/80 transition border border-white/20 shadow-xl backdrop-blur-md"
+              >
+                <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 flex items-center justify-center overflow-hidden">
+              <img 
+                src={selectedImage.url} 
+                alt={selectedImage.style} 
+                className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" 
+              />
+            </div>
+            <div className="mt-4 text-center">
+              <h3 className="text-xl font-bold text-white">{selectedImage.style}</h3>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Slide-out Sidebar */}
+      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-zinc-900 border-r border-zinc-800 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="p-6 space-y-8">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">Menu</h2>
+            <button onClick={() => setIsSidebarOpen(false)} className="text-zinc-400 hover:text-white">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Navigation</p>
+              <button onClick={() => {setStep(AppStep.UPLOAD_USER); setIsSidebarOpen(false);}} className="block w-full text-left text-zinc-300 hover:text-white py-2">Start New Look</button>
+              <button onClick={() => { /* Add gallery/history logic here */ setIsSidebarOpen(false);}} className="block w-full text-left text-zinc-300 hover:text-white py-2">My History</button>
+            </div>
+            
+            <div className="space-y-2">
+              <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Settings</p>
+              <div className="flex items-center justify-between py-2">
+                <span className="text-zinc-300">High Quality</span>
+                <div 
+                  className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${qualityMode === 'quality' ? 'bg-indigo-500' : 'bg-zinc-700'}`}
+                  onClick={() => setQualityMode(prev => prev === 'fast' ? 'quality' : 'fast')}
+                >
+                  <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-transform ${qualityMode === 'quality' ? 'left-6' : 'left-1'}`} />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div className="absolute bottom-6 left-6 right-6">
+            <div className="bg-zinc-800 p-4 rounded-xl">
+              <p className="text-xs text-zinc-400 mb-2">Credits Balance</p>
+              <p className="text-xl font-bold text-white">{user?.credits || 0}</p>
+              <button onClick={() => {setShowPayment(true); setIsSidebarOpen(false);}} className="mt-3 w-full bg-indigo-600 text-white text-xs font-bold py-2 rounded-lg hover:bg-indigo-500">Top Up</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Overlay for sidebar */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {showPayment && (
         <PaymentModal 
           onClose={() => setShowPayment(false)} 
@@ -635,15 +938,22 @@ const App: React.FC = () => {
       {/* Header */}
       <header className="sticky top-0 z-40 w-full border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-pink-500 flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(true)} className="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition">
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-pink-500 flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                </svg>
+              </div>
+              <h1 className="font-bold text-lg tracking-tight hidden sm:block">
+                StyleGenie <span className="text-xs bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full ml-1 font-normal">v2.0 TEST MODE</span>
+              </h1>
             </div>
-            <h1 className="font-bold text-lg tracking-tight hidden sm:block">
-              StyleGenie <span className="text-xs bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full ml-1 font-normal">v2.0 TEST MODE</span>
-            </h1>
           </div>
 
           <div className="flex items-center gap-4">
@@ -696,7 +1006,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {isLoading && step !== AppStep.GENERATING ? (
+        {isLoading && step !== AppStep.GENERATING && step !== AppStep.RESULTS ? (
           <div className="flex justify-center py-20">
             <LoadingSpinner message={loadingMessage || "Analyzing..."} />
           </div>

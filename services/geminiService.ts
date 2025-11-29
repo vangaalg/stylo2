@@ -43,6 +43,38 @@ const compressImageForAnalysis = async (base64: string): Promise<string> => {
 const apiKey = process.env.API_KEY;
 const ai = new GoogleGenAI({ apiKey: apiKey });
 
+// Helper function to generate image with fallback
+const generateImageWithFallback = async (
+  model: string,
+  contents: any[],
+  config: any
+): Promise<string> => {
+  try {
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: contents,
+      config: config
+    });
+
+    // Extract image from response parts
+    const parts = response.candidates?.[0]?.content?.parts;
+    if (parts) {
+      for (const part of parts) {
+        if (part.inlineData && part.inlineData.data) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+    }
+    throw new Error("No image generated");
+  } catch (error: any) {
+    // If model not found or error, throw to trigger fallback
+    if (error.message?.includes("not found") || error.message?.includes("404") || error.message?.includes("NOT_FOUND")) {
+      throw new Error("MODEL_NOT_FOUND");
+    }
+    throw error;
+  }
+};
+
 export const analyzeUserFace = async (base64Image: string): Promise<UserAnalysis> => {
   try {
     // Compress image for faster analysis
@@ -136,39 +168,47 @@ export const analyzeClothItem = async (base64Image: string): Promise<ClothAnalys
 // Function to remove face from clothing image if present
 export const removeFaceFromClothingImage = async (clothBase64: string): Promise<string> => {
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3.0-pro-image",
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: cleanBase64(clothBase64),
-            },
-          },
-          {
-            text: "Generate a clean product photo of ONLY the clothing item from this image. Remove or mask any person, face, or body parts. Show only the clothing item itself, as if it's laid flat or on a mannequin without visible face or skin. Keep the clothing's color, pattern, and texture exactly the same.",
-          },
-        ],
+    const contents = [
+      {
+        inlineData: {
+          mimeType: "image/jpeg",
+          data: cleanBase64(clothBase64),
+        },
       },
-      config: {
-        temperature: 0.3,
-        imageConfig: {
-          aspectRatio: "1:1",
-          outputResolution: "high"
-        }
-      }
-    });
+      {
+        text: "Generate a clean product photo of ONLY the clothing item from this image. Remove or mask any person, face, or body parts. Show only the clothing item itself, as if it's laid flat or on a mannequin without visible face or skin. Keep the clothing's color, pattern, and texture exactly the same.",
+      },
+    ];
 
-    // Extract image from response
+    // Try Gemini 3 Pro Image Preview first, fallback to Gemini 2.5 Flash Image
     let cleanedImage = "";
-    const parts = response.candidates?.[0]?.content?.parts;
-    if (parts) {
-      for (const part of parts) {
-        if (part.inlineData && part.inlineData.data) {
-          cleanedImage = `data:image/png;base64,${part.inlineData.data}`;
-          break;
+    try {
+      cleanedImage = await generateImageWithFallback(
+        "gemini-3-pro-image-preview",
+        contents,
+        {
+          temperature: 0.3,
+          imageConfig: {
+            aspectRatio: "1:1",
+            outputResolution: "1K"
+          }
         }
+      );
+    } catch (error: any) {
+      if (error.message === "MODEL_NOT_FOUND" || error.message?.includes("not found")) {
+        console.log("Falling back to Gemini 2.5 Flash Image for face removal");
+        cleanedImage = await generateImageWithFallback(
+          "gemini-2.5-flash-image",
+          contents,
+          {
+            temperature: 0.3,
+            imageConfig: {
+              aspectRatio: "1:1"
+            }
+          }
+        );
+      } else {
+        throw error;
       }
     }
     
@@ -184,6 +224,7 @@ export const removeFaceFromClothingImage = async (clothBase64: string): Promise<
   }
 };
 
+
 export const generateTryOnImage = async (
   userBase64: string,
   clothBase64: string,
@@ -191,7 +232,8 @@ export const generateTryOnImage = async (
   clothDescription: string,
   styleSuffix: string,
   onStatusChange?: (status: string) => void,
-  clothingHasFace: boolean = false
+  clothingHasFace: boolean = false,
+  qualityMode: 'fast' | 'quality' = 'fast'
 ): Promise<string> => {
   try {
     if (onStatusChange) onStatusChange("Generating base look...");
@@ -231,57 +273,93 @@ export const generateTryOnImage = async (
       Output: A single high-quality fashion photograph. The clothing must look naturally worn, with realistic draping and fit. Body proportions should be age-appropriate and match the specified height.
     `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.0-pro-image",
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: cleanBase64(userBase64),
-            },
-          },
-          {
-            inlineData: {
-              mimeType: "image/jpeg",
-              data: cleanBase64(clothBase64),
-            },
-          },
-          { text: prompt },
-        ],
+    const contents = [
+      {
+        inlineData: {
+          mimeType: "image/jpeg",
+          data: cleanBase64(userBase64),
+        },
       },
-      config: {
+      {
+        inlineData: {
+          mimeType: "image/jpeg",
+          data: cleanBase64(clothBase64),
+        },
+      },
+      { text: prompt },
+    ];
+
+    // Select model based on quality mode
+    let primaryModel = qualityMode === 'quality' ? "gemini-3-pro-image-preview" : "gemini-2.5-flash-image";
+    let generatedImage = "";
+
+    try {
+      if (onStatusChange) onStatusChange(`Using ${primaryModel}...`);
+      
+      const config: any = {
         temperature: 0.4,
         imageConfig: {
-          aspectRatio: "3:4",
-          outputResolution: "4K"
+          aspectRatio: "3:4"
         }
-      }
-    });
+      };
 
-    // Extract image from response parts
-    let generatedImage = "";
-    const parts = response.candidates?.[0]?.content?.parts;
-    if (parts) {
-      for (const part of parts) {
-        if (part.inlineData && part.inlineData.data) {
-          generatedImage = `data:image/png;base64,${part.inlineData.data}`;
-          break;
+      // Only add outputResolution for pro model
+      if (qualityMode === 'quality') {
+        config.imageConfig.outputResolution = "1K";
+      }
+
+      generatedImage = await generateImageWithFallback(
+        primaryModel,
+        contents,
+        config
+      );
+    } catch (error: any) {
+      // Fallback logic
+      if (error.message === "MODEL_NOT_FOUND" || error.message?.includes("not found")) {
+        // If Pro fails or is not found, fallback to Flash
+        if (primaryModel === "gemini-3-pro-image-preview") {
+           console.log("Gemini 3 Pro Image Preview not available, falling back to Gemini 2.5 Flash Image");
+           if (onStatusChange) onStatusChange("Using Gemini 2.5 Flash Image (Fallback)...");
+           generatedImage = await generateImageWithFallback(
+            "gemini-2.5-flash-image",
+            contents,
+            {
+              temperature: 0.4,
+              imageConfig: {
+                aspectRatio: "3:4"
+              }
+            }
+          );
+        } else {
+          // If Flash fails, try Pro (rare, but possible if Flash is down)
+           console.log("Gemini 2.5 Flash Image not available, attempting Gemini 3 Pro Image Preview");
+           generatedImage = await generateImageWithFallback(
+            "gemini-3-pro-image-preview",
+            contents,
+            {
+              temperature: 0.4,
+              imageConfig: {
+                aspectRatio: "3:4"
+              }
+            }
+          );
         }
+      } else {
+        throw error;
       }
     }
-    
+
     if (!generatedImage) {
       throw new Error("No image generated by Gemini.");
     }
 
     // --- PHASE 2: FACE SWAP ---
-    if (onStatusChange) onStatusChange("Refining face details...");
-    
-    // Call Replicate to swap original face onto generated body
-    const finalImage = await swapFaceWithReplicate(userBase64, generatedImage);
-
-    return finalImage;
+    // Note: Face swap is handled in App.tsx separately now for pipelining, 
+    // but we keep this return for backward compatibility if needed, 
+    // or we can remove the internal call.
+    // Based on the user's request for pipelining, App.tsx calls swapFaceWithReplicate separately.
+    // So we just return the generated image here.
+    return generatedImage;
 
   } catch (error) {
     console.error("Generation pipeline failed", error);

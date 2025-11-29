@@ -22,11 +22,10 @@ const swapFaceDirectly = async (
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "codeplugtech/face-swap:278a81e7",
+        version: "278a81e7ebb22db98bcba54de985d22cc1abeead2754eb1f2af717247be69b34",
         input: {
-          source_image: sourceImage,
-          target_image: targetImage,
-          swap_image: targetImage
+          swap_image: sourceImage,
+          input_image: targetImage
         }
       })
     });
@@ -80,11 +79,7 @@ export const swapFaceWithReplicate = async (
 ): Promise<string> => {
   
   try {
-    // Check if we have Replicate API token in environment
-    // @ts-ignore
-    const apiToken = process.env.REPLICATE_API_TOKEN;
-    
-    // Try Vercel API route first (production/deployed)
+    // Try Vercel API route first (works in production and with 'vercel dev')
     const startResponse = await fetch("/api/swap-init", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -123,14 +118,18 @@ export const swapFaceWithReplicate = async (
       throw new Error("Replicate prediction timed out");
     }
     
-    // API route failed - try direct call if we have token (local dev)
-    if (apiToken && apiToken.length > 0 && apiToken !== 'your_replicate_api_token_here') {
-      console.log("Using direct Replicate API call (local development mode)");
-      return await swapFaceDirectly(sourceImage, targetImage, apiToken);
-    }
-    
-    // No API available, return original
-    console.warn("Face swap unavailable. Install Vercel CLI and run 'vercel dev' or deploy to Vercel.");
+    // API route failed (404) - CORS prevents direct browser calls to Replicate
+    // Solution: Use 'vercel dev' or 'npm run dev:full' to enable API routes
+    console.warn("Face swap API route not available (404).");
+    console.warn("To enable face swap in local development:");
+    console.warn("1. Stop current server (Ctrl+C)");
+    console.warn("2. Run: npm run dev:full");
+    console.warn("   OR: vercel dev");
+    console.warn("3. This will start API routes on http://localhost:3000");
+    console.warn("4. Face swap will work through the API routes");
+    console.warn("");
+    console.warn("Note: Direct Replicate API calls from browser are blocked by CORS.");
+    console.warn("Continuing without face swap enhancement...");
     return targetImage;
 
   } catch (error) {
