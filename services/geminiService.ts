@@ -49,7 +49,7 @@ export const analyzeUserFace = async (base64Image: string): Promise<UserAnalysis
     const compressedImage = await compressImageForAnalysis(base64Image);
     
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.0-flash-exp",
       contents: {
         parts: [
           {
@@ -93,7 +93,7 @@ export const analyzeClothItem = async (base64Image: string): Promise<ClothAnalys
     const compressedImage = await compressImageForAnalysis(base64Image);
     
     const response = await ai.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.0-flash-exp",
       contents: {
         parts: [
           {
@@ -137,7 +137,7 @@ export const analyzeClothItem = async (base64Image: string): Promise<ClothAnalys
 export const removeFaceFromClothingImage = async (clothBase64: string): Promise<string> => {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-image",
+      model: "imagen-3",
       contents: {
         parts: [
           {
@@ -232,7 +232,7 @@ export const generateTryOnImage = async (
     `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-pro-image",
+      model: "imagen-3",
       contents: {
         parts: [
           {
