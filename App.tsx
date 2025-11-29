@@ -367,7 +367,11 @@ const App: React.FC = () => {
     setIsStillGenerating(true);
     setLoadingMessage("Initializing Stylist...");
     setError(null);
-    setGeneratedImages([]); // Clear previous images
+    setGeneratedImages(Array(STYLES.length).fill(null).map((_, idx) => ({
+      style: STYLES[idx].name,
+      url: '',
+      status: idx < 2 ? 'pending' : 'locked' // First 2 pending, rest locked
+    })));
     setLoadedCount(0);
     setCurrentProcessingIndex(0);
     setProgressPercent(0);
@@ -395,14 +399,16 @@ const App: React.FC = () => {
     if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
 
     try {
-      // Deduct credits upfront
+      // Deduct credits upfront for the first 2 photos
+      const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
+      
       if (!user.isAdmin) {
          if (user.id === 'test-guest-id') {
            // Mock deduction for testing
-           setUser({ ...user, credits: user.credits - COST });
+           setUser({ ...user, credits: user.credits - AUTO_GEN_COST });
          } else {
            // Real DB deduction
-           const newBalance = await deductCredits(user.id, user.credits, COST);
+           const newBalance = await deductCredits(user.id, user.credits, AUTO_GEN_COST);
            setUser({ ...user, credits: newBalance });
          }
       }
@@ -411,7 +417,8 @@ const App: React.FC = () => {
       // We maintain an array of promises for Replicate tasks to ensure we don't block Gemini loop
       const replicateTasks: Promise<void>[] = [];
 
-      for (let index = 0; index < STYLES.length; index++) {
+      // Only generate the first 2 styles automatically
+      for (let index = 0; index < 2; index++) {
         const style = STYLES[index];
         
         // Update UI to show we are working on this style (and potential background work on others)
@@ -512,13 +519,40 @@ const App: React.FC = () => {
   const handleRegenerate = async (index: number) => {
     if (!userImage || !clothImage || !userAnalysis || !user || index < 0 || index >= STYLES.length) return;
     
+    // Cost check for manual unlocks/regeneration
+    // If the image status is undefined (locked) or failed/done (regeneration), we charge.
+    // We'll assume 1 credit for Fast, 2 for Quality (as discussed in plan, though not strictly enforced yet in code, let's add basic check)
+    const cost = qualityMode === 'quality' ? 2 : 1;
+    
+    // If it's a regeneration (already done/failed) OR an unlock (undefined status)
+    // We should check credits.
+    if (!user.isAdmin && user.credits < cost) {
+        setShowPayment(true);
+        return;
+    }
+
     const style = STYLES[index];
     const styleName = style.name;
+    
+    // Deduct credits if not admin
+    if (!user.isAdmin) {
+       try {
+         if (user.id === 'test-guest-id') {
+            setUser({ ...user, credits: user.credits - cost });
+         } else {
+            const newBalance = await deductCredits(user.id, user.credits, cost);
+            setUser({ ...user, credits: newBalance });
+         }
+       } catch (e) {
+         console.error("Credit deduction failed", e);
+         return;
+       }
+    }
     
     // Update status to regenerating
     setGeneratedImages(prev => {
       const newImages = [...prev];
-      // Ensure the array is large enough (it should be if we're regenerating)
+      // Ensure the array is large enough
       if (!newImages[index]) {
          newImages[index] = { style: styleName, url: '', status: 'regenerating' };
       } else {
@@ -900,69 +934,111 @@ const App: React.FC = () => {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Show generated images */}
-          {generatedImages.map((img, idx) => {
-             // Check status for UI feedback
-             const isSwapping = img.status === 'swapping';
-             const isRegenerating = img.status === 'regenerating';
-             const isFailed = img.status === 'failed';
-             const isDoneWithError = img.status === 'done_with_error';
+          {/* We render ALL styles, but some might be empty/locked */}
+          {STYLES.map((style, idx) => {
+             const img = generatedImages[idx];
+             const isGenerated = !!img;
+             
+             // Status flags
+             const isSwapping = img?.status === 'swapping';
+             const isRegenerating = img?.status === 'regenerating';
+             const isFailed = img?.status === 'failed';
+             const isDoneWithError = img?.status === 'done_with_error';
+             const isDone = img?.status === 'done';
+             const isLocked = img?.status === 'locked';
              
              // Show regenerate button if failed, done with error, or even if done (user option)
              // But prominently for failures
-             const showRegenerate = isFailed || isDoneWithError || img.status === 'done';
+             const showRegenerate = isFailed || isDoneWithError || isDone;
 
              return (
             <div 
               key={idx} 
-              className="group relative rounded-2xl overflow-hidden bg-zinc-800 shadow-2xl border border-zinc-700/50 animate-fade-in cursor-pointer hover:ring-2 hover:ring-indigo-500 transition-all"
-              onClick={() => img.url && !isFailed && setSelectedImage({url: img.url, style: img.style})}
+              className={`group relative rounded-2xl overflow-hidden bg-zinc-800 shadow-2xl border transition-all ${isLocked ? 'border-zinc-800 hover:border-indigo-500/50' : 'border-zinc-700/50 hover:ring-2 hover:ring-indigo-500'}`}
+              onClick={() => isDone && setSelectedImage({url: img.url, style: style.name})}
             >
-              <div className="aspect-[3/4] overflow-hidden relative">
-                 {img.url && !isRegenerating ? (
-                   <>
-                   <img src={img.url} alt={img.style} className={`w-full h-full object-cover transform transition duration-700 ${isSwapping ? 'blur-sm scale-105' : 'group-hover:scale-105'}`} />
-                   {isSwapping && (
-                     <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
-                       <div className="text-center">
-                         <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-                         <p className="text-xs text-white font-medium shadow-black drop-shadow-md">Refining Face...</p>
+              <div className="aspect-[3/4] overflow-hidden relative bg-zinc-900">
+                 {isLocked ? (
+                    // LOCKED STATE
+                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-zinc-900/80 backdrop-blur-sm">
+                       <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center mb-3 border border-zinc-700 group-hover:border-indigo-500 transition-colors">
+                         <svg className="w-6 h-6 text-zinc-500 group-hover:text-indigo-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                         </svg>
                        </div>
-                     </div>
-                   )}
-                   </>
+                       <h4 className="text-white font-bold text-sm mb-1">{style.name}</h4>
+                       <p className="text-xs text-zinc-400 mb-4 line-clamp-2">{style.synopsis}</p>
+                       <button 
+                         onClick={(e) => {
+                           e.stopPropagation();
+                           handleRegenerate(idx);
+                         }}
+                         className="bg-white text-black px-4 py-2 rounded-full text-xs font-bold hover:bg-indigo-500 hover:text-white transition shadow-lg flex items-center gap-1"
+                       >
+                         <span>Generate</span>
+                         <span className="bg-black/10 px-1.5 rounded text-[10px]">{qualityMode === 'quality' ? '2' : '1'} Cr</span>
+                       </button>
+                    </div>
                  ) : (
-                   <div className="flex items-center justify-center h-full bg-zinc-900 relative">
-                     {isRegenerating ? (
-                        <div className="text-center">
-                          <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                          <p className="text-xs text-indigo-400 font-medium">Regenerating...</p>
-                        </div>
+                   // GENERATED / PROCESSING STATE
+                   <>
+                     {img.url && !isRegenerating ? (
+                       <>
+                       <img src={img.url} alt={style.name} className={`w-full h-full object-cover transform transition duration-700 ${isSwapping ? 'blur-sm scale-105' : 'group-hover:scale-105'}`} />
+                       {isSwapping && (
+                         <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+                           <div className="text-center">
+                             <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                             <p className="text-xs text-white font-medium shadow-black drop-shadow-md">Refining Face...</p>
+                           </div>
+                         </div>
+                       )}
+                       </>
                      ) : (
-                        <div className="flex flex-col items-center text-red-400">
-                          <svg className="w-12 h-12 mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                          </svg>
-                          <span className="text-xs">Generation Failed</span>
-                        </div>
+                       <div className="flex items-center justify-center h-full bg-zinc-900 relative">
+                         {isRegenerating ? (
+                            <div className="text-center">
+                              <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                              <p className="text-xs text-indigo-400 font-medium">Generating...</p>
+                            </div>
+                         ) : (
+                            <div className="flex flex-col items-center text-red-400">
+                              <svg className="w-12 h-12 mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                              </svg>
+                              <span className="text-xs">Generation Failed</span>
+                            </div>
+                         )}
+                       </div>
                      )}
-                   </div>
+                   </>
                  )}
               </div>
               
+              {!isLocked && (
               <div className="absolute bottom-0 inset-x-0 p-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none">
-                <span className="inline-block px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-medium border border-white/20">
-                  {img.style}
-                </span>
+                <div className="flex flex-col gap-1">
+                  <span className="inline-block self-start px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-medium border border-white/20">
+                    {style.name}
+                  </span>
+                  {style.synopsis && (
+                    <p className="text-[10px] text-zinc-300 leading-tight line-clamp-2">
+                      {style.synopsis}
+                    </p>
+                  )}
+                </div>
               </div>
+              )}
               
               {/* Action Buttons */}
+              {!isLocked && (
               <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto">
                   {/* Download Button */}
-                  {img.url && !isSwapping && !isRegenerating && !isFailed && (
+                  {img?.url && !isSwapping && !isRegenerating && !isFailed && (
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
-                        downloadImage(img.url, `try-on-${img.style}.png`);
+                        downloadImage(img.url, `try-on-${style.name}.png`);
                       }}
                       className="p-2 bg-white text-black rounded-full shadow-lg hover:bg-zinc-200 transition-all"
                       title="Download"
@@ -989,9 +1065,9 @@ const App: React.FC = () => {
                     </button>
                   )}
               </div>
+              )}
               
-              {/* Explicit Regenerate Button for Failed State in Center if needed, but top right is cleaner. 
-                  Let's add a center button specifically for failed state to be very obvious */}
+              {/* Explicit Regenerate Button for Failed State */}
               {isFailed && !isRegenerating && (
                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <button 
@@ -1011,13 +1087,18 @@ const App: React.FC = () => {
             </div>
           )})}
           
-          {/* Show placeholders for remaining/processing images */}
-          {isStillGenerating && Array.from({ length: totalStyles - loadedCount }).map((_, idx) => {
-            const actualIndex = loadedCount + idx;
-            const isCurrent = actualIndex === currentProcessingIndex;
-            const styleName = STYLES[actualIndex]?.name;
+          {/* Loading Placeholders (Only for the first 2 if generating) */}
+          {isStillGenerating && Array.from({ length: 2 - loadedCount }).map((_, idx) => {
+             // Only show placeholders if we haven't loaded the first 2 yet
+             if (loadedCount >= 2) return null;
+             
+             const actualIndex = loadedCount + idx;
+             if (actualIndex >= 2) return null; // Just in case
 
-            return (
+             const isCurrent = actualIndex === currentProcessingIndex;
+             const styleName = STYLES[actualIndex]?.name;
+
+             return (
               <div key={`loading-${idx}`} className={`relative rounded-2xl overflow-hidden bg-zinc-800/50 shadow-2xl border ${isCurrent ? 'border-indigo-500/50 ring-1 ring-indigo-500/30' : 'border-zinc-700/50'} animate-pulse`}>
                 <div className="aspect-[3/4] flex items-center justify-center bg-zinc-900/50 relative">
                   {isCurrent ? (

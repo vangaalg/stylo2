@@ -18,16 +18,16 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
     starter: {
       id: 'starter',
       name: 'Starter Pack',
-      credits: 51,
+      credits: 54,
       price: 999,
-      description: '51 Photos (~17 Lookbooks)'
+      description: '54 Photos (~18 Lookbooks)'
     },
     pro: {
       id: 'pro',
       name: 'Pro Pack',
-      credits: 99,
-      price: 1499,
-      description: '99 Photos (~33 Lookbooks)'
+      credits: 102,
+      price: 1500,
+      description: '102 Photos (~34 Lookbooks)'
     }
   };
 
@@ -165,8 +165,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
               <div className="flex justify-between items-center">
                 <div>
                   <span className="bg-blue-500/20 text-blue-400 text-xs font-bold px-2 py-1 rounded-full uppercase">Starter</span>
-                  <h4 className="text-lg font-bold text-white mt-1">51 Photos</h4>
-                  <p className="text-zinc-400 text-xs">~17 Lookbooks</p>
+                  <h4 className="text-lg font-bold text-white mt-1">54 Photos</h4>
+                  <p className="text-zinc-400 text-xs">~18 Lookbooks</p>
                 </div>
                 <div className="text-right">
                   <p className="text-2xl font-bold text-white">₹999</p>
@@ -190,11 +190,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
               <div className="flex justify-between items-center">
                 <div>
                   <span className="bg-purple-500/20 text-purple-400 text-xs font-bold px-2 py-1 rounded-full uppercase">Pro Value</span>
-                  <h4 className="text-lg font-bold text-white mt-1">99 Photos</h4>
-                  <p className="text-zinc-400 text-xs">~33 Lookbooks</p>
+                  <h4 className="text-lg font-bold text-white mt-1">102 Photos</h4>
+                  <p className="text-zinc-400 text-xs">~34 Lookbooks</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold text-white">₹1499</p>
+                  <p className="text-2xl font-bold text-white">₹1500</p>
                   {isProcessing && selectedPackage === 'pro' ? (
                     <span className="text-xs text-purple-400 animate-pulse">Processing...</span>
                   ) : (
