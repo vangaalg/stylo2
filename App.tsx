@@ -233,15 +233,15 @@ const App: React.FC = () => {
 
   // --- Handlers ---
 
-  const handlePaymentSuccess = async () => {
+  const handlePaymentSuccess = async (addedCredits: number) => {
     if (!user) return;
     try {
       // Mock DB update for test user
       if (user.id === 'test-guest-id') {
-         setUser({ ...user, credits: user.credits + 100 });
+         setUser({ ...user, credits: user.credits + addedCredits });
       } else {
          // Real DB update (won't run in test mode)
-         const newBalance = await addCredits(user.id, user.credits, 100);
+         const newBalance = await addCredits(user.id, user.credits, addedCredits);
          setUser({ ...user, credits: newBalance });
       }
       setShowPayment(false);
