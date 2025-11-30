@@ -316,6 +316,11 @@ const App: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showWaitModal, setShowWaitModal] = useState(false);
   
+  // Timer State
+  const [countdownTimer, setCountdownTimer] = useState<number>(300); // 5 minutes in seconds
+  const [totalTimeTaken, setTotalTimeTaken] = useState<number | null>(null); // Total time in seconds
+  const generationStartTimeRef = useRef<number | null>(null);
+  
   // UI State
   const [showCamera, setShowCamera] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
@@ -344,6 +349,26 @@ const App: React.FC = () => {
     };
     loadHistory();
   }, [user?.id]);
+
+  // Countdown Timer Effect
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+    
+    if (isStillGenerating && countdownTimer > 0) {
+      interval = setInterval(() => {
+        setCountdownTimer(prev => {
+          if (prev <= 1) {
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isStillGenerating, countdownTimer]);
 
   // Save history helper (Supabase + Local Fallback)
   const addToHistory = async (newImage: {url: string, style: string}) => {
@@ -636,6 +661,11 @@ const App: React.FC = () => {
     setLoadedCount(0);
     setCurrentProcessingIndex(0);
     setProgressPercent(0);
+    
+    // Start timer
+    setCountdownTimer(300); // 5 minutes
+    generationStartTimeRef.current = Date.now();
+    setTotalTimeTaken(null);
 
     // Activate wake lock to prevent device from sleeping
     await requestWakeLock();
@@ -782,6 +812,19 @@ const App: React.FC = () => {
       setStep(AppStep.CONFIRMATION);
     } finally {
       perfLogger.end('Total Generation Flow');
+      
+      // Calculate total time taken
+      if (generationStartTimeRef.current) {
+        const totalSeconds = Math.floor((Date.now() - generationStartTimeRef.current) / 1000);
+        setTotalTimeTaken(totalSeconds);
+        
+        // Log completion time
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        console.log(`[Generation Complete] Total time: ${minutes}m ${seconds}s (${totalSeconds} seconds)`);
+        perfLogger.log(`Generation completed in ${minutes}m ${seconds}s`);
+      }
+      
       setIsLoading(false);
       setIsStillGenerating(false);
       setCurrentProcessingIndex(-1);
@@ -931,6 +974,9 @@ const App: React.FC = () => {
     setUserHeight('');
     setUserWeight('');
     setCurrentProcessingIndex(-1);
+    setCountdownTimer(300);
+    setTotalTimeTaken(null);
+    generationStartTimeRef.current = null;
   };
 
   // --- Render Steps ---
@@ -1219,11 +1265,35 @@ const App: React.FC = () => {
                     <p className="text-xs text-indigo-400/80 mt-0.5">{loadingMessage || "Creating your styles..."}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-indigo-400/60">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                  </svg>
-                  <span>Device stays awake</span>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-xs text-indigo-400/60 mb-0.5">Time Remaining</p>
+                    <p className="text-lg font-bold text-indigo-300 tabular-nums">
+                      {Math.floor(countdownTimer / 60)}:{(countdownTimer % 60).toString().padStart(2, '0')}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-indigo-400/60">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                    </svg>
+                    <span>Device stays awake</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        {!isStillGenerating && totalTimeTaken !== null && (
+          <div className="bg-green-900/20 border border-green-500/40 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-green-300">Generation Complete</p>
+                  <p className="text-xs text-green-400/80 mt-0.5">Total time taken: {Math.floor(totalTimeTaken / 60)}m {totalTimeTaken % 60}s</p>
                 </div>
               </div>
             </div>
