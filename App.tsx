@@ -916,9 +916,9 @@ const App: React.FC = () => {
       </div>
 
       <div className="pt-6 border-t border-zinc-800 space-y-3">
-        {(!user?.isAdmin && user!.credits < 3) && (
+        {(user && !user.isAdmin && user.credits < 3) && (
             <div className="text-center text-yellow-500 text-sm mb-2">
-                ⚠️ Insufficient credits for 3 styles. Please top up.
+                ⚠️ Insufficient credits. Please top up.
             </div>
         )}
         

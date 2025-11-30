@@ -3,6 +3,9 @@ import { User } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 export const getOrCreateUserProfile = async (userId: string, email: string): Promise<User | null> => {
+  const ADMIN_EMAILS = ['gaurav.vangaal@gmail.com'];
+  const shouldBeAdmin = ADMIN_EMAILS.includes(email);
+
   // 1. Try to get existing profile
   const { data, error } = await supabase
     .from('profiles')
@@ -11,6 +14,12 @@ export const getOrCreateUserProfile = async (userId: string, email: string): Pro
     .single();
 
   if (data) {
+    // Update admin status if needed
+    if (shouldBeAdmin && !data.is_admin) {
+      await supabase.from('profiles').update({ is_admin: true }).eq('id', userId);
+      data.is_admin = true;
+    }
+
     return {
       id: data.id,
       email: data.email,
@@ -19,16 +28,16 @@ export const getOrCreateUserProfile = async (userId: string, email: string): Pro
     };
   }
 
-  // 2. If not found, create new profile with 10 free credits
-  if (error && error.code === 'PGRST116') { // Code for no rows found
+  // 2. If not found, create new profile
+  if (error && error.code === 'PGRST116') { 
     const { data: newProfile, error: createError } = await supabase
       .from('profiles')
       .insert([
         { 
           id: userId, 
           email: email,
-          credits: 10, // Free Trial Credits
-          is_admin: false 
+          credits: 10, 
+          is_admin: shouldBeAdmin 
         }
       ])
       .select()
