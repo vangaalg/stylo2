@@ -47,10 +47,13 @@ function createMockClient() {
 export const signInWithGoogle = async () => {
   if (!client) return { error: { message: "Supabase not configured" } };
   
+  const redirectUrl = window.location.origin;
+  console.log("Initiating Google Auth with redirect to:", redirectUrl);
+
   const { data, error } = await client.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: window.location.origin
+      redirectTo: redirectUrl
     }
   });
   return { data, error };
