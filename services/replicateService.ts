@@ -7,6 +7,39 @@ interface ReplicatePrediction {
   error: string | null;
 }
 
+// Helper to compress image for Vercel payload optimization
+const compressImage = (base64: string): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_SIZE = 1024; // Safe size for Vercel payload limit (4.5MB)
+      let width = img.width;
+      let height = img.height;
+      
+      if (width > height && width > MAX_SIZE) {
+        height = (height * MAX_SIZE) / width;
+        width = MAX_SIZE;
+      } else if (height > MAX_SIZE) {
+        width = (width * MAX_SIZE) / height;
+        height = MAX_SIZE;
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85)); // JPEG 0.85 is great balance
+      } else {
+        resolve(base64); 
+      }
+    };
+    img.onerror = () => resolve(base64);
+    img.src = base64;
+  });
+};
+
 // Direct Replicate API call for local development
 const swapFaceDirectly = async (
   sourceImage: string,
@@ -79,11 +112,15 @@ export const swapFaceWithReplicate = async (
 ): Promise<string> => {
   
   try {
+    // Compress images to ensure we stay under Vercel's 4.5MB payload limit
+    const compressedSource = await compressImage(sourceImage);
+    const compressedTarget = await compressImage(targetImage);
+
     // Try Vercel API route first (works in production and with 'vercel dev')
     const startResponse = await fetch("/api/swap-init", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sourceImage, targetImage })
+      body: JSON.stringify({ sourceImage: compressedSource, targetImage: compressedTarget })
     });
 
     // If API route works, use it

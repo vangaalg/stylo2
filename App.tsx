@@ -1023,6 +1023,7 @@ const App: React.FC = () => {
              const isDoneWithError = img?.status === 'done_with_error';
              const isDone = img?.status === 'done';
              const isLocked = img?.status === 'locked';
+             const isPending = img?.status === 'pending'; // Added pending check
              
              // Show regenerate button if failed, done with error, or even if done (user option)
              // But prominently for failures
@@ -1105,10 +1106,12 @@ const App: React.FC = () => {
                        </>
                      ) : (
                        <div className="flex items-center justify-center h-full bg-zinc-900 relative">
-                         {isRegenerating ? (
+                         {isRegenerating || isPending ? (
                             <div className="text-center">
                               <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-                              <p className="text-xs text-indigo-400 font-medium">Generating...</p>
+                              <p className="text-xs text-indigo-400 font-medium">
+                                {isPending ? 'Waiting...' : 'Generating...'}
+                              </p>
                             </div>
                          ) : (
                             <div className="flex flex-col items-center text-red-400">
