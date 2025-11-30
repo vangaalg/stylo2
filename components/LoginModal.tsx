@@ -3,10 +3,12 @@ import { signInWithGoogle } from '../services/supabaseClient';
 
 interface LoginModalProps {
   onClose: () => void;
+  onLoginStart?: () => void;
 }
 
-export const LoginModal: React.FC<LoginModalProps> = ({ onClose }) => {
+export const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginStart }) => {
   const handleGoogleLogin = async () => {
+    if (onLoginStart) onLoginStart();
     await signInWithGoogle();
   };
 

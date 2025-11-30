@@ -49,10 +49,29 @@ const App: React.FC = () => {
       if (initialSession?.user) {
         const token = initialSession.access_token;
         sessionTokenRef.current = token;
-        const profile = await getOrCreateUserProfile(initialSession.user.id, initialSession.user.email || '', token);
+        const metadata = {
+          full_name: initialSession.user.user_metadata?.full_name,
+          avatar_url: initialSession.user.user_metadata?.avatar_url
+        };
+        const profile = await getOrCreateUserProfile(initialSession.user.id, initialSession.user.email || '', token, metadata);
         setUser(profile);
         
-        if (profile) {
+        // 1. Try to restore redirect state
+        const savedState = sessionStorage.getItem('styleGenie_redirect_state');
+        if (savedState) {
+          try {
+            const parsed = JSON.parse(savedState);
+            if (parsed.step !== undefined) setStep(parsed.step);
+            if (parsed.userAge) setUserAge(parsed.userAge);
+            if (parsed.userHeight) setUserHeight(parsed.userHeight);
+            if (parsed.userWeight) setUserWeight(parsed.userWeight);
+            if (parsed.manualClothType) setManualClothType(parsed.manualClothType);
+            if (parsed.manualColor) setManualColor(parsed.manualColor);
+            sessionStorage.removeItem('styleGenie_redirect_state');
+          } catch (e) { console.error("Failed to restore state", e); }
+        } 
+        // 2. If no redirect state, pre-fill from profile
+        else if (profile) {
           if (profile.age) setUserAge(profile.age);
           if (profile.height) setUserHeight(profile.height);
           if (profile.weight) setUserWeight(profile.weight);
@@ -76,13 +95,31 @@ const App: React.FC = () => {
       if (session?.user) {
         const token = session.access_token;
         sessionTokenRef.current = token;
-        const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '', token);
+        const metadata = {
+          full_name: session.user.user_metadata?.full_name,
+          avatar_url: session.user.user_metadata?.avatar_url
+        };
+        const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '', token, metadata);
         setUser(profile);
         
-        if (profile) {
-          if (profile.age) setUserAge(profile.age);
-          if (profile.height) setUserHeight(profile.height);
-          if (profile.weight) setUserWeight(profile.weight);
+        // Restore redirect state if pending (and not handled by setupAuth)
+        const savedState = sessionStorage.getItem('styleGenie_redirect_state');
+        if (savedState) {
+           try {
+            const parsed = JSON.parse(savedState);
+            if (parsed.step !== undefined) setStep(parsed.step);
+            if (parsed.userAge) setUserAge(parsed.userAge);
+            if (parsed.userHeight) setUserHeight(parsed.userHeight);
+            if (parsed.userWeight) setUserWeight(parsed.userWeight);
+            if (parsed.manualClothType) setManualClothType(parsed.manualClothType);
+            if (parsed.manualColor) setManualColor(parsed.manualColor);
+            sessionStorage.removeItem('styleGenie_redirect_state');
+           } catch(e) { console.error(e); }
+        } else if (profile) {
+          // Only fill if empty to avoid overwriting
+          setUserAge(prev => prev || profile.age || '');
+          setUserHeight(prev => prev || profile.height || '');
+          setUserWeight(prev => prev || profile.weight || '');
         }
         
         // Start listening for session changes
@@ -129,6 +166,19 @@ const App: React.FC = () => {
       .subscribe();
       
     return channel;
+  };
+
+  const handleLoginStart = () => {
+    // Save critical state before redirect
+    const stateToSave = {
+      step,
+      userAge,
+      userHeight,
+      userWeight,
+      manualClothType,
+      manualColor
+    };
+    sessionStorage.setItem('styleGenie_redirect_state', JSON.stringify(stateToSave));
   };
 
   const handleSignOut = async () => {
@@ -1563,7 +1613,7 @@ const App: React.FC = () => {
       )}
 
       {showLoginModal && (
-        <LoginModal onClose={() => setShowLoginModal(false)} />
+        <LoginModal onClose={() => setShowLoginModal(false)} onLoginStart={handleLoginStart} />
       )}
 
       {showAdminDashboard && (
@@ -1596,7 +1646,13 @@ const App: React.FC = () => {
              {user ? (
                <>
                  <div className="bg-zinc-900 rounded-full px-4 py-1.5 border border-zinc-800 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                    {user.avatar ? (
+                      <img src={user.avatar} alt="User" className="w-6 h-6 rounded-full object-cover border border-zinc-700" />
+                    ) : (
+                      <span className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[10px] font-bold">
+                        {user.name ? user.name[0].toUpperCase() : (user.email?.[0].toUpperCase() || 'U')}
+                      </span>
+                    )}
                     <span className={`text-sm font-bold ${user.isAdmin ? 'text-indigo-400' : 'text-zinc-300'}`}>
                       {user.isAdmin ? 'Unlimited' : `${user.credits} Cr`}
                     </span>

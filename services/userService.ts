@@ -2,7 +2,7 @@ import { supabase } from './supabaseClient';
 import { User } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
-export const getOrCreateUserProfile = async (userId: string, email: string, sessionId?: string): Promise<User | null> => {
+export const getOrCreateUserProfile = async (userId: string, email: string, sessionId?: string, metadata?: { full_name?: string, avatar_url?: string }): Promise<User | null> => {
   const ADMIN_EMAILS = ['gaurav.vangaal@gmail.com'];
   const shouldBeAdmin = ADMIN_EMAILS.includes(email);
 
@@ -32,7 +32,9 @@ export const getOrCreateUserProfile = async (userId: string, email: string, sess
       isAdmin: data.is_admin,
       age: data.age,
       height: data.height,
-      weight: data.weight
+      weight: data.weight,
+      name: metadata?.full_name,
+      avatar: metadata?.avatar_url
     };
   }
 
@@ -61,7 +63,9 @@ export const getOrCreateUserProfile = async (userId: string, email: string, sess
       id: newProfile.id,
       email: newProfile.email,
       credits: newProfile.credits,
-      isAdmin: newProfile.is_admin
+      isAdmin: newProfile.is_admin,
+      name: metadata?.full_name,
+      avatar: metadata?.avatar_url
     };
   }
 

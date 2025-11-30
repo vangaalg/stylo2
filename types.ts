@@ -106,6 +106,8 @@ export interface User {
   age?: string;
   height?: string;
   weight?: string;
+  name?: string;
+  avatar?: string;
 }
 
 // Extend Window interface for Razorpay
