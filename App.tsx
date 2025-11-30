@@ -1127,7 +1127,15 @@ const App: React.FC = () => {
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <button 
-            onClick={() => fileInputRef.current?.click()}
+            onClick={(e) => {
+              e.preventDefault();
+              // Force Android to use the proper file picker by clearing capture
+              const input = fileInputRef.current;
+              if (input) {
+                input.removeAttribute('capture');
+                input.click();
+              }
+            }}
             className="bg-zinc-100 text-zinc-900 px-6 py-3 rounded-xl font-semibold hover:bg-white transition shadow-lg hover:shadow-indigo-500/20"
           >
             Upload Photo
@@ -1171,7 +1179,15 @@ const App: React.FC = () => {
         
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <button 
-            onClick={() => fileInputRef.current?.click()}
+            onClick={(e) => {
+              e.preventDefault();
+              // Force Android to use the proper file picker by clearing capture
+              const input = fileInputRef.current;
+              if (input) {
+                input.removeAttribute('capture');
+                input.click();
+              }
+            }}
             className="bg-zinc-100 text-zinc-900 px-6 py-3 rounded-xl font-semibold hover:bg-white transition shadow-lg hover:shadow-pink-500/20"
           >
             Select Cloth Image
