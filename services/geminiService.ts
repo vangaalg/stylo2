@@ -1,12 +1,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { UserAnalysis, ClothAnalysis, Gender } from "../types";
 import { swapFaceWithReplicate } from "./replicateService";
+import { perfLogger } from '../utils/performanceLogger';
 
 // Helper to remove header from base64 if present
 const cleanBase64 = (b64: string) => b64.replace(/^data:image\/\w+;base64,/, "");
 
 // Helper to compress image for faster API calls
 const compressImageForAnalysis = async (base64: string): Promise<string> => {
+  perfLogger.start('Image Compression');
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
@@ -29,12 +31,17 @@ const compressImageForAnalysis = async (base64: string): Promise<string> => {
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(img, 0, 0, width, height);
+        perfLogger.end('Image Compression');
         resolve(canvas.toDataURL('image/jpeg', 0.85)); // 85% quality
       } else {
+        perfLogger.end('Image Compression');
         resolve(base64); // Fallback to original
       }
     };
-    img.onerror = () => resolve(base64); // Fallback to original
+    img.onerror = () => {
+        perfLogger.end('Image Compression');
+        resolve(base64);
+    }; // Fallback to original
     img.src = base64;
   });
 };
@@ -49,6 +56,8 @@ const generateImageWithFallback = async (
   contents: any[],
   config: any
 ): Promise<string> => {
+  const perfId = `Gemini API Call (${model})`;
+  perfLogger.start(perfId);
   try {
     const response = await ai.models.generateContent({
       model: model,
@@ -72,6 +81,8 @@ const generateImageWithFallback = async (
       throw new Error("MODEL_NOT_FOUND");
     }
     throw error;
+  } finally {
+    perfLogger.end(perfId);
   }
 };
 

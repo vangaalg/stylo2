@@ -3,6 +3,7 @@ import { CameraCapture } from './components/CameraCapture';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { PaymentModal } from './components/PaymentModal';
 import { LoginModal } from './components/LoginModal'; // Added LoginModal
+import { AdminDashboard } from './components/AdminDashboard';
 import { 
   analyzeUserFace, 
   analyzeClothItem, 
@@ -20,6 +21,7 @@ import {
 } from './services/userService';
 import { swapFaceWithReplicate } from './services/replicateService';
 import { supabase, signOut } from './services/supabaseClient'; // Added supabase and signOut
+import { perfLogger } from './utils/performanceLogger';
 import { 
   AppStep, 
   UserAnalysis, 
@@ -118,6 +120,7 @@ const App: React.FC = () => {
 
   // UI State
   const [showCamera, setShowCamera] = useState(false);
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Wake Lock for preventing device sleep during generation
@@ -317,6 +320,7 @@ const App: React.FC = () => {
   };
 
   const processUserImage = async (base64: string) => {
+    perfLogger.start('User Image Analysis');
     setIsLoading(true);
     setLoadingMessage("Analyzing face...");
     setError(null);
@@ -333,6 +337,7 @@ const App: React.FC = () => {
       setError("⚠️ Failed to analyze image. Please try again with a clear face photo.");
       console.error(err);
     } finally {
+      perfLogger.end('User Image Analysis');
       setIsLoading(false);
       setLoadingMessage("");
     }
@@ -352,6 +357,7 @@ const App: React.FC = () => {
   };
 
   const processClothImage = async (base64: string) => {
+    perfLogger.start('Cloth Image Analysis');
     setIsLoading(true);
     setLoadingMessage("Analyzing clothing...");
     setError(null);
@@ -380,6 +386,7 @@ const App: React.FC = () => {
       setError("⚠️ Failed to analyze clothing. Please try again with a clear clothing photo.");
       console.error(err);
     } finally {
+      perfLogger.end('Cloth Image Analysis');
       setIsLoading(false);
       setLoadingMessage("");
     }
@@ -417,6 +424,7 @@ const App: React.FC = () => {
       return;
     }
     
+    perfLogger.start('Total Generation Flow');
     setStep(AppStep.RESULTS); // Move to results immediately
     setIsLoading(true);
     setIsStillGenerating(true);
@@ -484,6 +492,7 @@ const App: React.FC = () => {
         try {
           // 1. Gemini Step (Blocking - we wait for this to keep order and rate limits safe)
           setLoadingMessage(`Creating base style for ${style.name}...`);
+          perfLogger.start(`Gemini Gen Style ${index + 1}`);
           
           const generatedImage = await generateTryOnImage(
             userImage, 
@@ -495,6 +504,7 @@ const App: React.FC = () => {
             clothAnalysis?.hasFaceInImage || false,
             qualityMode // Pass selected quality mode
           );
+          perfLogger.end(`Gemini Gen Style ${index + 1}`);
           
           // 2. Trigger Replicate Step (Non-blocking for next loop iteration, but tracked for UI)
           // We start the Replicate process but DO NOT await it here.
@@ -512,9 +522,12 @@ const App: React.FC = () => {
           setLoadedCount(prev => Math.max(prev, index + 1));
 
           const replicateTask = (async () => {
+            const taskId = `Replicate Swap Style ${index + 1}`;
+            perfLogger.start(taskId);
             try {
                // This runs in background
                const finalImage = await swapFaceWithReplicate(userImage, generatedImage);
+               perfLogger.end(taskId);
                
                // Update UI with final image
                setGeneratedImages(prev => {
@@ -561,6 +574,7 @@ const App: React.FC = () => {
       setError("Generation failed. The model might be busy or the request invalid. Try again.");
       setStep(AppStep.CONFIRMATION);
     } finally {
+      perfLogger.end('Total Generation Flow');
       setIsLoading(false);
       setIsStillGenerating(false);
       setCurrentProcessingIndex(-1);
@@ -1325,6 +1339,14 @@ const App: React.FC = () => {
                   <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-transform ${qualityMode === 'quality' ? 'left-6' : 'left-1'}`} />
                 </div>
               </div>
+              {user?.isAdmin && (
+                <button onClick={() => { setShowAdminDashboard(true); setIsSidebarOpen(false); }} className="block w-full text-left text-indigo-400 hover:text-indigo-300 py-2 font-bold flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  Performance Dashboard
+                </button>
+              )}
               {user && (
                 <button onClick={() => { handleSignOut(); setIsSidebarOpen(false); }} className="block w-full text-left text-red-400 hover:text-red-300 py-2">Sign Out</button>
               )}
@@ -1464,6 +1486,10 @@ const App: React.FC = () => {
 
       {showLoginModal && (
         <LoginModal onClose={() => setShowLoginModal(false)} />
+      )}
+
+      {showAdminDashboard && (
+        <AdminDashboard onClose={() => setShowAdminDashboard(false)} />
       )}
 
       {/* Header */}

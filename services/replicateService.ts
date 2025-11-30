@@ -1,3 +1,5 @@
+import { perfLogger } from '../utils/performanceLogger';
+
 // Service to interact with Replicate API via our secure Vercel API routes
 
 interface ReplicatePrediction {
@@ -111,17 +113,22 @@ export const swapFaceWithReplicate = async (
   targetImage: string  // Gemini generated image (Base64)
 ): Promise<string> => {
   
+  perfLogger.start('Replicate Total');
   try {
     // Compress images to ensure we stay under Vercel's 4.5MB payload limit
+    perfLogger.start('Replicate Compression');
     const compressedSource = await compressImage(sourceImage);
     const compressedTarget = await compressImage(targetImage);
+    perfLogger.end('Replicate Compression');
 
     // Try Vercel API route first (works in production and with 'vercel dev')
+    perfLogger.start('Replicate API Init');
     const startResponse = await fetch("/api/swap-init", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sourceImage: compressedSource, targetImage: compressedTarget })
     });
+    perfLogger.end('Replicate API Init');
 
     // If API route works, use it
     if (startResponse.ok) {
@@ -129,6 +136,7 @@ export const swapFaceWithReplicate = async (
       const predictionId = prediction.id;
 
       // Poll for results via Proxy
+      perfLogger.start('Replicate Polling');
       let attempts = 0;
       const maxAttempts = 30;
 
@@ -142,16 +150,19 @@ export const swapFaceWithReplicate = async (
         const statusResult: ReplicatePrediction = await pollResponse.json();
 
         if (statusResult.status === "succeeded" && statusResult.output) {
+          perfLogger.end('Replicate Polling');
           return statusResult.output;
         }
 
         if (statusResult.status === "failed" || statusResult.status === "canceled") {
+          perfLogger.end('Replicate Polling');
           throw new Error(`Replicate prediction failed: ${statusResult.error}`);
         }
 
         attempts++;
       }
-
+      
+      perfLogger.end('Replicate Polling');
       throw new Error("Replicate prediction timed out");
     }
     
@@ -172,5 +183,7 @@ export const swapFaceWithReplicate = async (
   } catch (error) {
     console.error("Face swap service failed:", error);
     return targetImage;
+  } finally {
+    perfLogger.end('Replicate Total');
   }
 };
