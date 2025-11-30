@@ -1142,7 +1142,7 @@ const App: React.FC = () => {
         <input 
           type="file" 
           ref={fileInputRef} 
-          accept="image/*" 
+          accept="image/png, image/jpeg, image/jpg, image/webp, image/heic, image/*" 
           onChange={handleUserUpload} 
           className="hidden" 
         />
@@ -1183,7 +1183,7 @@ const App: React.FC = () => {
         <input 
           type="file" 
           ref={fileInputRef} 
-          accept="image/*" 
+          accept="image/png, image/jpeg, image/jpg, image/webp, image/heic, image/*" 
           onChange={handleClothUpload} 
           className="hidden" 
         />
