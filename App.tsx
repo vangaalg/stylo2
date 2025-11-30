@@ -44,40 +44,70 @@ const App: React.FC = () => {
     let activeSubscription: any = null;
 
     const setupAuth = async () => {
-      // Check active session
-      const { data: { session: initialSession } } = await supabase.auth.getSession();
-      if (initialSession?.user) {
-        const token = initialSession.access_token;
-        sessionTokenRef.current = token;
-        const metadata = {
-          full_name: initialSession.user.user_metadata?.full_name,
-          avatar_url: initialSession.user.user_metadata?.avatar_url
-        };
-        const profile = await getOrCreateUserProfile(initialSession.user.id, initialSession.user.email || '', token, metadata);
-        setUser(profile);
-        
-        // 1. Try to restore redirect state
-        const savedState = sessionStorage.getItem('styleGenie_redirect_state');
-        if (savedState) {
-          try {
-            const parsed = JSON.parse(savedState);
-            if (parsed.step !== undefined) setStep(parsed.step);
-            if (parsed.userAge) setUserAge(parsed.userAge);
-            if (parsed.userHeight) setUserHeight(parsed.userHeight);
-            if (parsed.userWeight) setUserWeight(parsed.userWeight);
-            if (parsed.manualClothType) setManualClothType(parsed.manualClothType);
-            if (parsed.manualColor) setManualColor(parsed.manualColor);
-            sessionStorage.removeItem('styleGenie_redirect_state');
-          } catch (e) { console.error("Failed to restore state", e); }
-        } 
-        // 2. If no redirect state, pre-fill from profile
-        else if (profile) {
-          if (profile.age) setUserAge(profile.age);
-          if (profile.height) setUserHeight(profile.height);
-          if (profile.weight) setUserWeight(profile.weight);
+      // Clear any URL hash fragments from OAuth redirect
+      if (window.location.hash) {
+        const hash = window.location.hash;
+        // Check if it's an auth redirect
+        if (hash.includes('access_token') || hash.includes('error')) {
+          // Let Supabase handle it, then clean up URL
+          setTimeout(() => {
+            window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          }, 100);
         }
+      }
 
-        activeSubscription = subscribeToSessionChanges(initialSession.user.id);
+      // Check active session
+      const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error("Session error:", sessionError);
+        setIsAuthLoading(false);
+        return;
+      }
+
+      if (initialSession?.user) {
+        try {
+          const token = initialSession.access_token;
+          sessionTokenRef.current = token;
+          const metadata = {
+            full_name: initialSession.user.user_metadata?.full_name,
+            avatar_url: initialSession.user.user_metadata?.avatar_url
+          };
+          const profile = await getOrCreateUserProfile(initialSession.user.id, initialSession.user.email || '', token, metadata);
+          
+          if (!profile) {
+            console.error("Failed to get/create user profile");
+            setIsAuthLoading(false);
+            return;
+          }
+          
+          setUser(profile);
+          
+          // 1. Try to restore redirect state
+          const savedState = sessionStorage.getItem('styleGenie_redirect_state');
+          if (savedState) {
+            try {
+              const parsed = JSON.parse(savedState);
+              if (parsed.step !== undefined) setStep(parsed.step);
+              if (parsed.userAge) setUserAge(parsed.userAge);
+              if (parsed.userHeight) setUserHeight(parsed.userHeight);
+              if (parsed.userWeight) setUserWeight(parsed.userWeight);
+              if (parsed.manualClothType) setManualClothType(parsed.manualClothType);
+              if (parsed.manualColor) setManualColor(parsed.manualColor);
+              sessionStorage.removeItem('styleGenie_redirect_state');
+            } catch (e) { console.error("Failed to restore state", e); }
+          } 
+          // 2. If no redirect state, pre-fill from profile
+          else if (profile) {
+            if (profile.age) setUserAge(profile.age);
+            if (profile.height) setUserHeight(profile.height);
+            if (profile.weight) setUserWeight(profile.weight);
+          }
+
+          activeSubscription = subscribeToSessionChanges(initialSession.user.id);
+        } catch (error) {
+          console.error("Error setting up auth:", error);
+        }
       }
       setIsAuthLoading(false);
     };
@@ -86,6 +116,8 @@ const App: React.FC = () => {
 
     // Listen for changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state change:", event, session?.user?.email);
+      
       // Cleanup old subscription if user changed
       if (activeSubscription) {
         supabase.removeChannel(activeSubscription);
@@ -93,38 +125,52 @@ const App: React.FC = () => {
       }
 
       if (session?.user) {
-        const token = session.access_token;
-        sessionTokenRef.current = token;
-        const metadata = {
-          full_name: session.user.user_metadata?.full_name,
-          avatar_url: session.user.user_metadata?.avatar_url
-        };
-        const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '', token, metadata);
-        setUser(profile);
-        
-        // Restore redirect state if pending (and not handled by setupAuth)
-        const savedState = sessionStorage.getItem('styleGenie_redirect_state');
-        if (savedState) {
-           try {
-            const parsed = JSON.parse(savedState);
-            if (parsed.step !== undefined) setStep(parsed.step);
-            if (parsed.userAge) setUserAge(parsed.userAge);
-            if (parsed.userHeight) setUserHeight(parsed.userHeight);
-            if (parsed.userWeight) setUserWeight(parsed.userWeight);
-            if (parsed.manualClothType) setManualClothType(parsed.manualClothType);
-            if (parsed.manualColor) setManualColor(parsed.manualColor);
-            sessionStorage.removeItem('styleGenie_redirect_state');
-           } catch(e) { console.error(e); }
-        } else if (profile) {
-          // Only fill if empty to avoid overwriting
-          setUserAge(prev => prev || profile.age || '');
-          setUserHeight(prev => prev || profile.height || '');
-          setUserWeight(prev => prev || profile.weight || '');
+        try {
+          const token = session.access_token;
+          sessionTokenRef.current = token;
+          const metadata = {
+            full_name: session.user.user_metadata?.full_name,
+            avatar_url: session.user.user_metadata?.avatar_url
+          };
+          const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '', token, metadata);
+          
+          if (!profile) {
+            console.error("Failed to get/create profile on auth change");
+            setUser(null);
+            setIsAuthLoading(false);
+            return;
+          }
+          
+          setUser(profile);
+          
+          // Restore redirect state if pending (and not handled by setupAuth)
+          const savedState = sessionStorage.getItem('styleGenie_redirect_state');
+          if (savedState) {
+             try {
+              const parsed = JSON.parse(savedState);
+              if (parsed.step !== undefined) setStep(parsed.step);
+              if (parsed.userAge) setUserAge(parsed.userAge);
+              if (parsed.userHeight) setUserHeight(parsed.userHeight);
+              if (parsed.userWeight) setUserWeight(parsed.userWeight);
+              if (parsed.manualClothType) setManualClothType(parsed.manualClothType);
+              if (parsed.manualColor) setManualColor(parsed.manualColor);
+              sessionStorage.removeItem('styleGenie_redirect_state');
+             } catch(e) { console.error("Failed to restore state:", e); }
+          } else if (profile) {
+            // Only fill if empty to avoid overwriting
+            setUserAge(prev => prev || profile.age || '');
+            setUserHeight(prev => prev || profile.height || '');
+            setUserWeight(prev => prev || profile.weight || '');
+          }
+          
+          // Start listening for session changes
+          activeSubscription = subscribeToSessionChanges(session.user.id);
+        } catch (error) {
+          console.error("Error in auth state change:", error);
+          setUser(null);
         }
-        
-        // Start listening for session changes
-        activeSubscription = subscribeToSessionChanges(session.user.id);
       } else {
+        // User signed out
         setUser(null);
         sessionTokenRef.current = null;
         // Clear fields on logout
@@ -182,10 +228,34 @@ const App: React.FC = () => {
   };
 
   const handleSignOut = async () => {
-    await signOut();
-    setUser(null);
-    setStep(AppStep.UPLOAD_USER);
-    setHistory([]);
+    try {
+      const { error } = await signOut();
+      if (error) {
+        console.error("Sign out error:", error);
+      }
+      // Clear all state
+      setUser(null);
+      sessionTokenRef.current = null;
+      setStep(AppStep.UPLOAD_USER);
+      setHistory([]);
+      setUserAge('');
+      setUserHeight('');
+      setUserWeight('');
+      setUserImage(null);
+      setClothImage(null);
+      setUserAnalysis(null);
+      setClothAnalysis(null);
+      setGeneratedImages([]);
+      // Clear any saved redirect state
+      sessionStorage.removeItem('styleGenie_redirect_state');
+      // Don't force reload - let Supabase auth state change handle it
+    } catch (err) {
+      console.error("Sign out failed:", err);
+      // Still clear local state even if API call fails
+      setUser(null);
+      sessionTokenRef.current = null;
+      setStep(AppStep.UPLOAD_USER);
+    }
   };
 
   // Protected Action Handler
@@ -1645,7 +1715,7 @@ const App: React.FC = () => {
              {/* Auth & Credit Display */}
              {user ? (
                <>
-                 <div className="bg-zinc-900 rounded-full px-4 py-1.5 border border-zinc-800 flex items-center gap-2">
+                 <div className="bg-zinc-900 rounded-full px-4 py-1.5 border border-zinc-800 flex items-center gap-2 cursor-pointer hover:bg-zinc-800 transition" onClick={() => setShowHistory(true)}>
                     {user.avatar ? (
                       <img src={user.avatar} alt="User" className="w-6 h-6 rounded-full object-cover border border-zinc-700" />
                     ) : (
@@ -1653,12 +1723,20 @@ const App: React.FC = () => {
                         {user.name ? user.name[0].toUpperCase() : (user.email?.[0].toUpperCase() || 'U')}
                       </span>
                     )}
+                    {user.name && (
+                      <span className="text-xs text-zinc-400 font-medium hidden sm:block">
+                        {user.name.split(' ')[0]}
+                      </span>
+                    )}
                     <span className={`text-sm font-bold ${user.isAdmin ? 'text-indigo-400' : 'text-zinc-300'}`}>
                       {user.isAdmin ? 'Unlimited' : `${user.credits} Cr`}
                     </span>
                     {!user.isAdmin && (
                       <button 
-                        onClick={() => setShowPayment(true)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowPayment(true);
+                        }}
                         className="ml-2 text-xs text-indigo-400 hover:text-white font-semibold"
                       >
                         +
