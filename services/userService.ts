@@ -151,11 +151,15 @@ export const addCredits = async (userId: string, currentCredits: number, amount:
 // 1. Upload Base64 or Blob URL to Supabase Storage
 export const uploadImageToStorage = async (userId: string, imageDataUrl: string): Promise<string | null> => {
   try {
+    console.log('[Upload] Starting image upload for user:', userId);
+    
     // Convert Data URL to Blob
     const res = await fetch(imageDataUrl);
     const blob = await res.blob();
+    console.log('[Upload] Blob created, size:', blob.size, 'bytes');
     
     const fileName = `${userId}/${uuidv4()}.png`;
+    console.log('[Upload] Uploading to:', fileName);
     
     const { data, error } = await supabase.storage
       .from('generated-images')
@@ -164,16 +168,31 @@ export const uploadImageToStorage = async (userId: string, imageDataUrl: string)
         upsert: false
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[Upload] Supabase Storage Error:', {
+        message: error.message,
+        statusCode: error.statusCode,
+        error: error
+      });
+      throw error;
+    }
+
+    console.log('[Upload] Upload successful:', data);
 
     // Get Public URL
     const { data: { publicUrl } } = supabase.storage
       .from('generated-images')
       .getPublicUrl(fileName);
 
+    console.log('[Upload] Public URL:', publicUrl);
     return publicUrl;
-  } catch (error) {
-    console.error('Error uploading image:', error);
+  } catch (error: any) {
+    console.error('[Upload] FATAL - Error uploading image:', {
+      message: error?.message,
+      statusCode: error?.statusCode,
+      details: error
+    });
+    alert(`Image upload failed: ${error?.message || 'Unknown error'}. History will not be saved.`);
     return null;
   }
 };
