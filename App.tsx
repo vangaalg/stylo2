@@ -1091,8 +1091,8 @@ const App: React.FC = () => {
 
         const particleCount = 50 * (timeLeft / duration);
         // since particles fall down, start a bit higher than random
-        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }, shapes: ['heart'], colors: ['#ff0000', '#ff69b4', '#ff1493'] });
-        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }, shapes: ['heart'], colors: ['#ff0000', '#ff69b4', '#ff1493'] });
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }, shapes: ['circle', 'square'], colors: ['#ff0000', '#ff69b4', '#ff1493'] });
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }, shapes: ['circle', 'square'], colors: ['#ff0000', '#ff69b4', '#ff1493'] });
       }, 250);
     }
     
