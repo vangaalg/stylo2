@@ -85,13 +85,23 @@ const App: React.FC = () => {
               if (parsed.userWeight) setUserWeight(parsed.userWeight);
               if (parsed.manualClothType) setManualClothType(parsed.manualClothType);
               if (parsed.manualColor) setManualColor(parsed.manualColor);
+              
+              // Restore images and analysis
+              if (parsed.userImage) setUserImage(parsed.userImage);
+              if (parsed.clothImage) setClothImage(parsed.clothImage);
+              if (parsed.userAnalysis) setUserAnalysis(parsed.userAnalysis);
+              if (parsed.clothAnalysis) setClothAnalysis(parsed.clothAnalysis);
+
               sessionStorage.removeItem('styleGenie_redirect_state');
             } catch (e) { console.error("Failed to restore state", e); }
           } 
           // 2. If no redirect state, pre-fill from profile
           else if (profile) {
             if (profile.age) setUserAge(profile.age);
+            {/* If user is already set, we might want to update height if it's default */}
             if (profile.height) setUserHeight(profile.height);
+            else setUserHeight("5'5"); // Default
+            
             if (profile.weight) setUserWeight(profile.weight);
           }
 
@@ -161,6 +171,13 @@ const App: React.FC = () => {
               if (parsed.userWeight) setUserWeight(parsed.userWeight);
               if (parsed.manualClothType) setManualClothType(parsed.manualClothType);
               if (parsed.manualColor) setManualColor(parsed.manualColor);
+              
+              // Restore images and analysis
+              if (parsed.userImage) setUserImage(parsed.userImage);
+              if (parsed.clothImage) setClothImage(parsed.clothImage);
+              if (parsed.userAnalysis) setUserAnalysis(parsed.userAnalysis);
+              if (parsed.clothAnalysis) setClothAnalysis(parsed.clothAnalysis);
+
               sessionStorage.removeItem('styleGenie_redirect_state');
              } catch(e) { console.error("Failed to restore state:", e); }
           } else if (profile) {
@@ -223,17 +240,26 @@ const App: React.FC = () => {
     return channel;
   };
 
-  const handleLoginStart = () => {
-    // Save critical state before redirect
+          // Save critical state including images before redirect
     const stateToSave = {
       step,
       userAge,
       userHeight,
       userWeight,
       manualClothType,
-      manualColor
+      manualColor,
+      userImage, // Persist images
+      clothImage,
+      userAnalysis,
+      clothAnalysis
     };
-    sessionStorage.setItem('styleGenie_redirect_state', JSON.stringify(stateToSave));
+    try {
+       sessionStorage.setItem('styleGenie_redirect_state', JSON.stringify(stateToSave));
+    } catch (e) {
+       console.error("Failed to save state (likely too large for storage):", e);
+       // Fallback: Try saving fewer items if images are too big
+       // Or we could use IndexedDB but for now let's try to be robust
+    }
   };
 
   const handleSignOut = async () => {
@@ -298,7 +324,8 @@ const App: React.FC = () => {
   
   // User details
   const [userAge, setUserAge] = useState<string>('');
-  const [userHeight, setUserHeight] = useState<string>('');
+  // Default height state
+  const [userHeight, setUserHeight] = useState<string>("5'5");
   const [userWeight, setUserWeight] = useState<string>(''); // Added Weight State
 
   const [generatedImages, setGeneratedImages] = useState<{style: string, url: string, status?: string}[]>([]);
@@ -797,7 +824,7 @@ const App: React.FC = () => {
              return newImages;
           });
           setLoadedCount(prev => Math.max(prev, index + 1));
-        }
+         }
       }
 
       // Wait for all background Replicate tasks to finish before declaring "Complete"
@@ -1138,13 +1165,43 @@ const App: React.FC = () => {
           </div>
           <div className="space-y-1">
             <label className="text-xs text-zinc-400 block">Height</label>
-            <input 
-              type="text" 
+            <select 
               value={userHeight}
               onChange={(e) => setUserHeight(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition text-white placeholder-zinc-600"
-              placeholder="e.g. 5'8"
-            />
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition text-white placeholder-zinc-600 appearance-none"
+            >
+              <option value="" disabled>Select height</option>
+              <option value="4'0">4'0"</option>
+              <option value="4'1">4'1"</option>
+              <option value="4'2">4'2"</option>
+              <option value="4'3">4'3"</option>
+              <option value="4'4">4'4"</option>
+              <option value="4'5">4'5"</option>
+              <option value="4'6">4'6"</option>
+              <option value="4'7">4'7"</option>
+              <option value="4'8">4'8"</option>
+              <option value="4'9">4'9"</option>
+              <option value="4'10">4'10"</option>
+              <option value="4'11">4'11"</option>
+              <option value="5'0">5'0"</option>
+              <option value="5'1">5'1"</option>
+              <option value="5'2">5'2"</option>
+              <option value="5'3">5'3"</option>
+              <option value="5'4">5'4"</option>
+              <option value="5'5">5'5"</option>
+              <option value="5'6">5'6"</option>
+              <option value="5'7">5'7"</option>
+              <option value="5'8">5'8"</option>
+              <option value="5'9">5'9"</option>
+              <option value="5'10">5'10"</option>
+              <option value="5'11">5'11"</option>
+              <option value="6'0">6'0"</option>
+              <option value="6'1">6'1"</option>
+              <option value="6'2">6'2"</option>
+              <option value="6'3">6'3"</option>
+              <option value="6'4">6'4"</option>
+              <option value="6'5">6'5"</option>
+            </select>
           </div>
           <div className="space-y-1">
             <label className="text-xs text-zinc-400 block">Weight</label>
@@ -1293,7 +1350,13 @@ const App: React.FC = () => {
                 </svg>
                 <div>
                   <p className="text-sm font-medium text-green-300">Generation Complete</p>
-                  <p className="text-xs text-green-400/80 mt-0.5">Total time taken: {Math.floor(totalTimeTaken / 60)}m {totalTimeTaken % 60}s</p>
+                  <div className="flex gap-4 mt-0.5">
+                     <p className="text-xs text-green-400/80">Your time: {Math.floor(totalTimeTaken / 60)}m {totalTimeTaken % 60}s</p>
+                     <p className="text-xs text-zinc-400">Avg time: 3m 00s</p>
+                     {totalTimeTaken < 180 && (
+                        <p className="text-xs text-indigo-400 font-bold">⚡ You were {180 - totalTimeTaken}s faster!</p>
+                     )}
+                  </div>
                 </div>
               </div>
             </div>
