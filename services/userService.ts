@@ -161,20 +161,33 @@ export const uploadImageToStorage = async (userId: string, imageDataUrl: string)
     const fileName = `${userId}/${uuidv4()}.png`;
     console.log('[Upload] Uploading to:', fileName);
     
-    const { data, error } = await supabase.storage
+    // Add timeout wrapper
+    const uploadPromise = supabase.storage
       .from('generated-images')
       .upload(fileName, blob, {
         contentType: 'image/png',
         upsert: false
       });
+    
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Upload timeout after 30 seconds')), 30000)
+    );
+    
+    const { data, error } = await Promise.race([uploadPromise, timeoutPromise]) as any;
 
     if (error) {
       console.error('[Upload] Supabase Storage Error:', {
         message: error.message,
         statusCode: error.statusCode,
-        error: error
+        name: error.name,
+        fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
       });
+      alert(`Upload failed: ${error.message || 'Unknown error'}. Check console for details.`);
       throw error;
+    }
+
+    if (!data) {
+      throw new Error('Upload returned no data and no error (unexpected)');
     }
 
     console.log('[Upload] Upload successful:', data);
@@ -190,22 +203,48 @@ export const uploadImageToStorage = async (userId: string, imageDataUrl: string)
     console.error('[Upload] FATAL - Error uploading image:', {
       message: error?.message,
       statusCode: error?.statusCode,
+      name: error?.name,
+      stack: error?.stack,
       details: error
     });
-    alert(`Image upload failed: ${error?.message || 'Unknown error'}. History will not be saved.`);
+    
+    // Only show alert if it's not a timeout (to avoid spam)
+    if (!error?.message?.includes('timeout')) {
+      alert(`Image upload failed: ${error?.message || 'Unknown error'}. History will not be saved. Check console for details.`);
+    }
     return null;
   }
 };
 
 // 2. Save Record to Database
 export const saveHistoryItem = async (userId: string, imageUrl: string, style: string) => {
+  // Get the current authenticated user to ensure RLS compliance
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  if (!user) {
+    console.error('Error saving history: No authenticated user found');
+    return;
+  }
+
+  if (user.id !== userId) {
+    console.warn('Warning: mismatch between passed userId and authenticated user. Using authenticated user ID.');
+  }
+
+  const targetUserId = user.id;
+
   const { error } = await supabase
     .from('generated_history')
     .insert([
-      { user_id: userId, image_url: imageUrl, style: style }
+      { user_id: targetUserId, image_url: imageUrl, style: style }
     ]);
 
-  if (error) console.error('Error saving history:', error);
+  if (error) {
+    console.error('Error saving history:', error);
+    // Add more detailed error logging for debugging 403s
+    if (error.code === '42501' || error.code === 'PGRST301') {
+       console.error('RLS Policy Violation. Check if:\n1. User is logged in\n2. user_id matches auth.uid()\n3. INSERT policy exists');
+    }
+  }
 };
 
 // 3. Fetch History
