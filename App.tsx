@@ -240,6 +240,7 @@ const App: React.FC = () => {
     return channel;
   };
 
+  const handleLoginStart = () => {
           // Save critical state including images before redirect
     const stateToSave = {
       step,
