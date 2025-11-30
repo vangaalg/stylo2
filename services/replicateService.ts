@@ -10,21 +10,20 @@ interface ReplicatePrediction {
 }
 
 // Helper to compress image for Vercel payload optimization
-const compressImage = (base64: string): Promise<string> => {
+const compressImage = (base64: string, maxSize: number = 1024, quality: number = 0.85): Promise<string> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      const MAX_SIZE = 1024; // Safe size for Vercel payload limit (4.5MB)
       let width = img.width;
       let height = img.height;
       
-      if (width > height && width > MAX_SIZE) {
-        height = (height * MAX_SIZE) / width;
-        width = MAX_SIZE;
-      } else if (height > MAX_SIZE) {
-        width = (width * MAX_SIZE) / height;
-        height = MAX_SIZE;
+      if (width > height && width > maxSize) {
+        height = (height * maxSize) / width;
+        width = maxSize;
+      } else if (height > maxSize) {
+        width = (width * maxSize) / height;
+        height = maxSize;
       }
       
       canvas.width = width;
@@ -32,7 +31,7 @@ const compressImage = (base64: string): Promise<string> => {
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.85)); // JPEG 0.85 is great balance
+        resolve(canvas.toDataURL('image/jpeg', quality));
       } else {
         resolve(base64); 
       }
@@ -116,9 +115,10 @@ export const swapFaceWithReplicate = async (
   perfLogger.start('Replicate Total');
   try {
     // Compress images to ensure we stay under Vercel's 4.5MB payload limit
+    // Strategy: High quality for face (Source), Aggressive compression for dress (Target)
     perfLogger.start('Replicate Compression');
-    const compressedSource = await compressImage(sourceImage);
-    const compressedTarget = await compressImage(targetImage);
+    const compressedSource = await compressImage(sourceImage, 1536, 0.95); // High Quality Face
+    const compressedTarget = await compressImage(targetImage, 1024, 0.85); // Standard Quality Dress
     perfLogger.end('Replicate Compression');
 
     // Try Vercel API route first (works in production and with 'vercel dev')
