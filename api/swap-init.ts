@@ -32,13 +32,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(response.status).json({ error: errText });
+      console.error("Replicate API Error:", response.status, errText);
+      return res.status(response.status).json({ error: `Replicate Error: ${errText}` });
     }
 
     const prediction = await response.json();
     return res.status(201).json(prediction);
 
   } catch (error: any) {
-    return res.status(500).json({ error: error.message });
+    console.error("Swap Init Handler Error:", error);
+    return res.status(500).json({ error: `Internal Handler Error: ${error.message}` });
   }
 }
