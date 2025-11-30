@@ -211,8 +211,10 @@ const App: React.FC = () => {
           
           if (newSessionId && currentToken && newSessionId !== currentToken) {
              // Detected a new session elsewhere
-             alert("You have been logged out because a new session was started on another device.");
-             handleSignOut();
+             console.warn("Session mismatch detected:", { new: newSessionId, current: currentToken });
+             // Temporarily disabled strictly enforcement to debug refresh issues
+             // alert("You have been logged out because a new session was started on another device.");
+             // handleSignOut();
           }
         }
       )
