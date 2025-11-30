@@ -36,31 +36,82 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null); // Default to null (Guest)
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const sessionTokenRef = useRef<string | null>(null);
 
   // Listen for Auth Changes
   useEffect(() => {
-    // Check active session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (session?.user) {
-        const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '');
+    let activeSubscription: any = null;
+
+    const setupAuth = async () => {
+      // Check active session
+      const { data: { session: initialSession } } = await supabase.auth.getSession();
+      if (initialSession?.user) {
+        const token = initialSession.access_token;
+        sessionTokenRef.current = token;
+        const profile = await getOrCreateUserProfile(initialSession.user.id, initialSession.user.email || '', token);
         setUser(profile);
+        activeSubscription = subscribeToSessionChanges(initialSession.user.id);
       }
       setIsAuthLoading(false);
-    });
+    };
+
+    setupAuth();
 
     // Listen for changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Cleanup old subscription if user changed
+      if (activeSubscription) {
+        supabase.removeChannel(activeSubscription);
+        activeSubscription = null;
+      }
+
       if (session?.user) {
-        const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '');
+        const token = session.access_token;
+        sessionTokenRef.current = token;
+        const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '', token);
         setUser(profile);
+        
+        // Start listening for session changes
+        activeSubscription = subscribeToSessionChanges(session.user.id);
       } else {
         setUser(null);
+        sessionTokenRef.current = null;
       }
       setIsAuthLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (activeSubscription) supabase.removeChannel(activeSubscription);
+    };
   }, []);
+
+  const subscribeToSessionChanges = (userId: string) => {
+    const channel = supabase
+      .channel(`session-check-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${userId}`
+        },
+        (payload) => {
+          const newSessionId = payload.new.last_session_id;
+          const currentToken = sessionTokenRef.current;
+          
+          if (newSessionId && currentToken && newSessionId !== currentToken) {
+             // Detected a new session elsewhere
+             alert("You have been logged out because a new session was started on another device.");
+             handleSignOut();
+          }
+        }
+      )
+      .subscribe();
+      
+    return channel;
+  };
 
   const handleSignOut = async () => {
     await signOut();

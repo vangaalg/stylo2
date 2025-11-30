@@ -2,7 +2,7 @@ import { supabase } from './supabaseClient';
 import { User } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
-export const getOrCreateUserProfile = async (userId: string, email: string): Promise<User | null> => {
+export const getOrCreateUserProfile = async (userId: string, email: string, sessionId?: string): Promise<User | null> => {
   const ADMIN_EMAILS = ['gaurav.vangaal@gmail.com'];
   const shouldBeAdmin = ADMIN_EMAILS.includes(email);
 
@@ -14,10 +14,15 @@ export const getOrCreateUserProfile = async (userId: string, email: string): Pro
     .single();
 
   if (data) {
-    // Update admin status if needed
-    if (shouldBeAdmin && !data.is_admin) {
-      await supabase.from('profiles').update({ is_admin: true }).eq('id', userId);
-      data.is_admin = true;
+    // Update admin status or session ID if needed
+    const updates: any = {};
+    if (shouldBeAdmin && !data.is_admin) updates.is_admin = true;
+    // If a new session ID is provided, update it (taking over the session)
+    if (sessionId && data.last_session_id !== sessionId) updates.last_session_id = sessionId;
+
+    if (Object.keys(updates).length > 0) {
+      await supabase.from('profiles').update(updates).eq('id', userId);
+      if (updates.is_admin) data.is_admin = true;
     }
 
     return {
@@ -37,7 +42,8 @@ export const getOrCreateUserProfile = async (userId: string, email: string): Pro
           id: userId, 
           email: email,
           credits: 10, 
-          is_admin: shouldBeAdmin 
+          is_admin: shouldBeAdmin,
+          last_session_id: sessionId
         }
       ])
       .select()
@@ -59,6 +65,22 @@ export const getOrCreateUserProfile = async (userId: string, email: string): Pro
   console.error('Error fetching profile:', error);
   return null;
 };
+
+export const checkSessionValidity = async (userId: string, currentSessionId: string): Promise<boolean> => {
+  const { data } = await supabase
+    .from('profiles')
+    .select('last_session_id')
+    .eq('id', userId)
+    .single();
+    
+  if (!data) return false;
+  
+  // If no session ID tracked yet, consider valid (until next login updates it)
+  if (!data.last_session_id) return true;
+  
+  return data.last_session_id === currentSessionId;
+};
+
 
 export const getUserProfile = async (userId: string): Promise<User | null> => {
   const { data, error } = await supabase
