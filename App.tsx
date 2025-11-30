@@ -1709,31 +1709,54 @@ const App: React.FC = () => {
           </div>
               )}
             
-            {/* Star Rating Component (Below Photo) */}
+            {/* Interactive Feedback System */}
             {isDone && img?.url && (
-              <div className="mt-3 flex flex-col items-center animate-fade-in">
-                <p className="text-xs text-zinc-500 mb-1">Rate this look</p>
-                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+              <div 
+                className={`mt-3 w-full max-w-[200px] mx-auto
+                           bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/50 rounded-xl p-3 
+                           transition-all duration-500 
+                           ${ratings[img.url] ? 'bg-indigo-900/10 border-indigo-500/20' : 'hover:bg-zinc-800/80 hover:border-zinc-700'}
+                           flex flex-col items-center justify-center gap-2`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                
+                {!ratings[img.url] ? (
+                   <div className="flex items-center gap-2 animate-pulse">
+                     <span className="text-[10px] font-bold uppercase tracking-widest bg-gradient-to-r from-indigo-400 to-pink-400 bg-clip-text text-transparent">
+                       Rate This Style
+                     </span>
+                   </div>
+                ) : (
+                   <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-300 animate-fade-in">
+                     {ratings[img.url] === 5 ? "🎉 Amazing choice!" : 
+                      ratings[img.url] >= 4 ? "✨ Thanks for feedback" :
+                      "👍 We'll refine it"}
+                   </p>
+                )}
+
+                <div className="flex gap-1.5">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <button
                       key={star}
                       onClick={() => handleRating(idx, star, img.url)}
-                      className="focus:outline-none transition-transform hover:scale-110"
+                      className="group/star focus:outline-none transition-transform active:scale-95"
                     >
                       <svg 
-                        className={`w-5 h-5 ${ratings[img.url] >= star ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-600 fill-none hover:text-yellow-400/50'}`}
+                        className={`w-6 h-6 drop-shadow-sm transition-all duration-200 ${
+                          ratings[img.url] >= star 
+                            ? 'text-yellow-400 fill-yellow-400 scale-110' 
+                            : 'text-zinc-600 fill-zinc-800/50 stroke-zinc-500 hover:stroke-yellow-400 hover:fill-yellow-400/20 hover:scale-110'
+                        }`}
                         viewBox="0 0 24 24" 
-                        stroke="currentColor"
-                        strokeWidth={ratings[img.url] >= star ? 0 : 1.5}
+                        strokeWidth={1.5}
+                        strokeLinecap="round" 
+                        strokeLinejoin="round"
                       >
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                       </svg>
                     </button>
                   ))}
                 </div>
-                {ratings[img.url] === 5 && (
-                  <p className="text-[10px] text-pink-400 mt-1 font-medium animate-pulse">Perfect! ❤️</p>
-                )}
               </div>
             )}
           </div>
