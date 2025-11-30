@@ -74,7 +74,7 @@ const swapFaceDirectly = async (
 
     // Poll for results
     let attempts = 0;
-    const maxAttempts = 30;
+    const maxAttempts = 60; // Increased to 120s timeout
 
     while (attempts < maxAttempts) {
       await new Promise(resolve => setTimeout(resolve, 2000));
@@ -138,32 +138,32 @@ export const swapFaceWithReplicate = async (
       // Poll for results via Proxy
       perfLogger.start('Replicate Polling');
       let attempts = 0;
-      const maxAttempts = 30;
+      const maxAttempts = 60; // Increased to 120s timeout
 
-      while (attempts < maxAttempts) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const pollResponse = await fetch(`/api/swap-status?id=${predictionId}`);
-        
-        if (!pollResponse.ok) continue;
+      try {
+        while (attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          const pollResponse = await fetch(`/api/swap-status?id=${predictionId}`);
+          
+          if (!pollResponse.ok) continue;
 
-        const statusResult: ReplicatePrediction = await pollResponse.json();
+          const statusResult: ReplicatePrediction = await pollResponse.json();
 
-        if (statusResult.status === "succeeded" && statusResult.output) {
-          perfLogger.end('Replicate Polling');
-          return statusResult.output;
+          if (statusResult.status === "succeeded" && statusResult.output) {
+            return statusResult.output;
+          }
+
+          if (statusResult.status === "failed" || statusResult.status === "canceled") {
+            throw new Error(`Replicate prediction failed: ${statusResult.error}`);
+          }
+
+          attempts++;
         }
-
-        if (statusResult.status === "failed" || statusResult.status === "canceled") {
-          perfLogger.end('Replicate Polling');
-          throw new Error(`Replicate prediction failed: ${statusResult.error}`);
-        }
-
-        attempts++;
+        throw new Error("Replicate prediction timed out");
+      } finally {
+        perfLogger.end('Replicate Polling');
       }
-      
-      perfLogger.end('Replicate Polling');
-      throw new Error("Replicate prediction timed out");
     }
     
     // API route failed (404) - CORS prevents direct browser calls to Replicate

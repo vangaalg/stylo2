@@ -43,3 +43,27 @@ create policy "User can insert their own history." on generated_history
 
 create policy "User can delete their own history." on generated_history
   for delete using (auth.uid() = user_id);
+
+-- Storage bucket policies for generated-images
+-- Note: Bucket must exist in Supabase Dashboard first
+
+-- Allow users to upload files to their own folder
+create policy "Users can upload to own folder" on storage.objects
+  for insert with check (
+    bucket_id = 'generated-images' 
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- Allow users to read files from their own folder
+create policy "Users can read own files" on storage.objects
+  for select using (
+    bucket_id = 'generated-images' 
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- Allow users to delete files from their own folder
+create policy "Users can delete own files" on storage.objects
+  for delete using (
+    bucket_id = 'generated-images' 
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
