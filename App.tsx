@@ -357,6 +357,9 @@ const App: React.FC = () => {
   // Wake Lock for preventing device sleep during generation
   const wakeLockRef = useRef<any>(null);
 
+  // Timers for individual images
+  const [imageTimers, setImageTimers] = useState<{[key: number]: number}>({});
+
   // Load history from Supabase on mount (if user exists)
   useEffect(() => {
     const loadHistory = async () => {
@@ -378,7 +381,7 @@ const App: React.FC = () => {
     loadHistory();
   }, [user?.id]);
 
-  // Countdown Timer Effect
+  // Countdown Timer Effect (Global)
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     
@@ -397,6 +400,26 @@ const App: React.FC = () => {
       if (interval) clearInterval(interval);
     };
   }, [isStillGenerating, countdownTimer]);
+
+  // Individual Image Timers Effect
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setImageTimers(prev => {
+        const next = { ...prev };
+        let changed = false;
+        Object.keys(next).forEach(key => {
+          const idx = parseInt(key);
+          if (next[idx] > 0) {
+            next[idx] -= 1;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // Save history helper (Supabase + Local Fallback)
   const addToHistory = async (newImage: {url: string, style: string}) => {
@@ -749,6 +772,9 @@ const App: React.FC = () => {
       for (let index = 0; index < 2; index++) {
         const style = STYLES[index];
         
+        // Initialize timer for this image (5 minutes = 300s)
+        setImageTimers(prev => ({ ...prev, [index]: 300 }));
+
         // Update UI to show we are working on this style (and potential background work on others)
         setCurrentProcessingIndex(index);
         setProcessStage("generating"); // Phase 1 starts
@@ -801,6 +827,9 @@ const App: React.FC = () => {
                  return newImages;
                });
                
+               // Clear timer
+               setImageTimers(prev => ({ ...prev, [index]: 0 }));
+
                // Save to history
                addToHistory({ url: finalImage, style: style.name });
             } catch (swapError) {
@@ -919,6 +948,9 @@ const App: React.FC = () => {
         return newImages;
       });
 
+      // Start timer for this regeneration (5 minutes = 300s)
+      setImageTimers(prev => ({ ...prev, [index]: 300 }));
+
       // Build descriptions again (in case state changed, though likely same)
       let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
       if (userAge) userDesc += `, age ${userAge}`;
@@ -972,6 +1004,9 @@ const App: React.FC = () => {
           return newImages;
         });
         
+        // Clear timer
+        setImageTimers(prev => ({ ...prev, [index]: 0 }));
+        
         // Save to history
         if (user) {
           addToHistory({ url: finalImage, style: styleName });
@@ -1005,6 +1040,7 @@ const App: React.FC = () => {
     setCountdownTimer(300);
     setTotalTimeTaken(null);
     generationStartTimeRef.current = null;
+    setImageTimers({});
   };
 
   // --- Render Steps ---
@@ -1383,6 +1419,10 @@ const App: React.FC = () => {
              // Show regenerate button if failed, done with error, or even if done (user option)
              // But prominently for failures
              const showRegenerate = isFailed || isDoneWithError || isDone;
+             
+             // Timer for this image
+             const timer = imageTimers[idx] || 0;
+             const showTimer = (isPending || isRegenerating || isSwapping) && timer > 0;
 
              return (
             <div 
@@ -1453,6 +1493,26 @@ const App: React.FC = () => {
                        {isSwapping && (
                          <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
                            <div className="text-center">
+                             {/* Stylish Rotating Timer Overlay */}
+                             <div className="relative w-24 h-24 mx-auto mb-3 flex items-center justify-center">
+                                <svg className="w-full h-full rotate-[-90deg]" viewBox="0 0 36 36">
+                                  {/* Background Circle */}
+                                  <path className="text-zinc-700" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="2" />
+                                  {/* Progress Circle (Reverse) */}
+                                  <path 
+                                    className="text-indigo-500 drop-shadow-[0_0_4px_rgba(99,102,241,0.8)] transition-all duration-1000 ease-linear" 
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                                    fill="none" 
+                                    stroke="currentColor" 
+                                    strokeWidth="3" 
+                                    strokeDasharray={`${(timer / 300) * 100}, 100`} 
+                                  />
+                                </svg>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                  <span className="text-xl font-bold text-white tabular-nums">{Math.floor(timer / 60)}:{(timer % 60).toString().padStart(2, '0')}</span>
+                                  <span className="text-[8px] uppercase tracking-widest text-indigo-300">Rem</span>
+                                </div>
+                             </div>
                              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
                              <p className="text-xs text-white font-medium shadow-black drop-shadow-md">Refining Face...</p>
                            </div>
@@ -1463,7 +1523,27 @@ const App: React.FC = () => {
                        <div className="flex items-center justify-center h-full bg-zinc-900 relative">
                          {isRegenerating || isPending ? (
                             <div className="text-center">
-                              <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                              {showTimer ? (
+                                <div className="relative w-24 h-24 mx-auto mb-4 flex items-center justify-center">
+                                  <svg className="w-full h-full rotate-[-90deg]" viewBox="0 0 36 36">
+                                    <path className="text-zinc-800" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="2" />
+                                    <path 
+                                      className="text-indigo-500 drop-shadow-[0_0_8px_rgba(99,102,241,0.5)] transition-all duration-1000 ease-linear" 
+                                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" 
+                                      fill="none" 
+                                      stroke="currentColor" 
+                                      strokeWidth="3" 
+                                      strokeDasharray={`${(timer / 300) * 100}, 100`} 
+                                    />
+                                  </svg>
+                                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                    <span className="text-2xl font-bold text-white tabular-nums">{Math.floor(timer / 60)}:{(timer % 60).toString().padStart(2, '0')}</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
+                              )}
+                              
                               <p className="text-xs text-indigo-400 font-medium">
                                 {isPending ? 'Waiting...' : 'Generating...'}
                               </p>
