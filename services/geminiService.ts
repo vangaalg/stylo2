@@ -317,6 +317,12 @@ export const generateTryOnImage = async (
       
       Style: ${styleSuffix}
       
+      FITTING INSTRUCTIONS (CRITICAL):
+      - The clothing must have an IMPECCABLE, TAILORED FIT, like high-end designer wear.
+      - No loose, baggy, or ill-fitting areas (unless the item is specifically oversized).
+      - The fabric should drape perfectly on the body, highlighting a supermodel aesthetic.
+      - The person should have excellent posture and supermodel physique (while respecting the source body type).
+      
       Output: A single high-quality fashion photograph. The clothing must look naturally worn, with realistic draping and fit. Body proportions should be age-appropriate and match the specified height.
     `;
 
