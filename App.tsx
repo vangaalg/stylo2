@@ -1708,7 +1708,6 @@ const App: React.FC = () => {
                     </button>
           </div>
               )}
-            </div>
             
             {/* Star Rating Component (Below Photo) */}
             {isDone && img?.url && (
