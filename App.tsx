@@ -18,11 +18,14 @@ import {
   uploadImageToStorage, 
   saveHistoryItem,
   getOrCreateUserProfile, // Added profile creator
-  updateUserDetails
+  updateUserDetails,
+  updateRating,
+  getFiveStarCount
 } from './services/userService';
 import { swapFaceWithReplicate } from './services/replicateService';
 import { supabase, signOut } from './services/supabaseClient'; // Added supabase and signOut
 import { perfLogger } from './utils/performanceLogger';
+import confetti from 'canvas-confetti'; // Added confetti for celebration
 import { 
   AppStep, 
   UserAnalysis, 
@@ -321,6 +324,7 @@ const App: React.FC = () => {
   // Manual overrides
   const [manualClothType, setManualClothType] = useState<string>('');
   const [manualColor, setManualColor] = useState<string>('');
+  const [fittingPreference, setFittingPreference] = useState<string>('Regular Fit'); // Default
   const [customPromptText, setCustomPromptText] = useState<string>('');
   
   // User details
@@ -359,6 +363,17 @@ const App: React.FC = () => {
 
   // Timers for individual images
   const [imageTimers, setImageTimers] = useState<{[key: number]: number}>({});
+  
+  // Ratings state
+  const [ratings, setRatings] = useState<{[key: string]: number}>({});
+
+  // 5-Star Stats
+  const [fiveStarCount, setFiveStarCount] = useState<number>(0);
+
+  // Load 5-star count on mount
+  useEffect(() => {
+    getFiveStarCount().then(setFiveStarCount);
+  }, []);
 
   // Load history from Supabase on mount (if user exists)
   useEffect(() => {
@@ -734,9 +749,14 @@ const App: React.FC = () => {
     const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
     
     // Add detailed cloth analysis
+    // Override "loose" fit to ensure proper fitting in generated images
+    const fitOverride = fittingPreference || (clothAnalysis?.fit && clothAnalysis.fit.toLowerCase().includes('loose') 
+      ? 'well-fitted, tailored' 
+      : (clothAnalysis?.fit || 'well-fitted'));
+    
     let clothDesc = `${finalClothType}, ${finalColor}, ${clothAnalysis?.pattern}`;
     if (clothAnalysis?.texture) clothDesc += `, Material: ${clothAnalysis.texture}`;
-    if (clothAnalysis?.fit) clothDesc += `, Fit: ${clothAnalysis.fit}`;
+    clothDesc += `, Fit: ${fitOverride}`; // Always use well-fitted fit or user preference
     if (clothAnalysis?.neckline) clothDesc += `, Neckline: ${clothAnalysis.neckline}`;
     if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
 
@@ -960,9 +980,15 @@ const App: React.FC = () => {
 
       const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
       const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
+      
+      // Override "loose" fit to ensure proper fitting in generated images
+      const fitOverride = fittingPreference || (clothAnalysis?.fit && clothAnalysis.fit.toLowerCase().includes('loose') 
+        ? 'well-fitted, tailored' 
+        : (clothAnalysis?.fit || 'well-fitted'));
+      
       let clothDesc = `${finalClothType}, ${finalColor}, ${clothAnalysis?.pattern}`;
       if (clothAnalysis?.texture) clothDesc += `, Material: ${clothAnalysis.texture}`;
-      if (clothAnalysis?.fit) clothDesc += `, Fit: ${clothAnalysis.fit}`;
+      clothDesc += `, Fit: ${fitOverride}`; // Always use well-fitted fit or user preference
       if (clothAnalysis?.neckline) clothDesc += `, Neckline: ${clothAnalysis.neckline}`;
       if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
 
@@ -1043,10 +1069,48 @@ const App: React.FC = () => {
     setImageTimers({});
   };
 
+  // Handle Rating
+  const handleRating = async (idx: number, rating: number, imageUrl: string) => {
+    // Update local state
+    setRatings(prev => ({ ...prev, [imageUrl]: rating }));
+    
+    // Fire confetti for 5 stars
+    if (rating === 5) {
+      const duration = 3 * 1000;
+      const animationEnd = Date.now() + duration;
+      const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+
+      const randomInRange = (min: number, max: number) => Math.random() * (max - min) + min;
+
+      const interval: any = setInterval(function() {
+        const timeLeft = animationEnd - Date.now();
+
+        if (timeLeft <= 0) {
+          return clearInterval(interval);
+        }
+
+        const particleCount = 50 * (timeLeft / duration);
+        // since particles fall down, start a bit higher than random
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }, shapes: ['heart'], colors: ['#ff0000', '#ff69b4', '#ff1493'] });
+        confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }, shapes: ['heart'], colors: ['#ff0000', '#ff69b4', '#ff1493'] });
+      }, 250);
+    }
+    
+    // Save to backend
+    if (user && imageUrl) {
+      await updateRating(imageUrl, rating);
+    }
+  };
+
   // --- Render Steps ---
 
   const renderUploadUser = () => (
     <div className="space-y-6 text-center animate-fade-in">
+      {fiveStarCount > 0 && (
+        <div className="inline-flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-4 py-1.5 mb-2">
+          <span className="text-yellow-500 text-xs font-bold">⭐ {fiveStarCount.toLocaleString()} 5-Star Styles Generated</span>
+        </div>
+      )}
       <div className="bg-zinc-800/50 p-8 rounded-2xl border-2 border-dashed border-zinc-700 hover:border-indigo-500 transition-colors">
         <div className="mb-4">
           <svg className="w-16 h-16 mx-auto text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1181,6 +1245,19 @@ const App: React.FC = () => {
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-pink-500 transition text-white placeholder-zinc-600"
                   placeholder="e.g. Navy Blue, Emerald Green"
                />
+             </div>
+             <div className="space-y-1">
+               <label className="text-xs text-zinc-400 block">Fitting Preference</label>
+               <select 
+                  value={fittingPreference}
+                  onChange={(e) => setFittingPreference(e.target.value)}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-pink-500 transition text-white placeholder-zinc-600 appearance-none"
+               >
+                 <option value="Tight / Bodycon">Tight / Bodycon</option>
+                 <option value="Regular Fit">Regular Fit</option>
+                 <option value="Loose / Relaxed">Loose / Relaxed</option>
+                 <option value="Oversized / Baggy">Oversized / Baggy</option>
+               </select>
              </div>
           </div>
         </div>
@@ -1632,6 +1709,35 @@ const App: React.FC = () => {
           </div>
               )}
             </div>
+            
+            {/* Star Rating Component (Below Photo) */}
+            {isDone && img?.url && (
+              <div className="mt-3 flex flex-col items-center animate-fade-in">
+                <p className="text-xs text-zinc-500 mb-1">Rate this look</p>
+                <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => handleRating(idx, star, img.url)}
+                      className="focus:outline-none transition-transform hover:scale-110"
+                    >
+                      <svg 
+                        className={`w-5 h-5 ${ratings[img.url] >= star ? 'text-yellow-400 fill-yellow-400' : 'text-zinc-600 fill-none hover:text-yellow-400/50'}`}
+                        viewBox="0 0 24 24" 
+                        stroke="currentColor"
+                        strokeWidth={ratings[img.url] >= star ? 0 : 1.5}
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                      </svg>
+                    </button>
+                  ))}
+                </div>
+                {ratings[img.url] === 5 && (
+                  <p className="text-[10px] text-pink-400 mt-1 font-medium animate-pulse">Perfect! ❤️</p>
+                )}
+              </div>
+            )}
+          </div>
           )})}
           
           {/* Loading Placeholders (Only for the first 2 if generating) */}

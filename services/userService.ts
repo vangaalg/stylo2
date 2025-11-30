@@ -293,6 +293,56 @@ export const getUserHistory = async (userId: string) => {
   return data.map(item => ({
     url: item.image_url,
     style: item.style,
-    date: item.created_at
+    date: item.created_at,
+    rating: item.rating || 0 // Include rating if available
   }));
+};
+
+// 4. Update Rating
+export const updateRating = async (imageUrl: string, rating: number) => {
+  try {
+    // We update based on image_url since user might rate from local state list which doesn't have ID handy
+    // But image_url is unique enough for this user
+    
+    // Get current user to ensure RLS
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return;
+
+    const { error } = await supabase
+      .from('generated_history')
+      .update({ rating: rating })
+      .eq('image_url', imageUrl)
+      .eq('user_id', session.user.id); // Double check ownership
+
+    if (error) {
+      console.error('Error updating rating:', error);
+    } else {
+      console.log(`Rated ${rating} stars for ${imageUrl}`);
+    }
+  } catch (err) {
+    console.error('Error in updateRating:', err);
+  }
+};
+
+// 5. Get Total 5-Star Count (Global)
+export const getFiveStarCount = async (): Promise<number> => {
+  try {
+    // We use a stored function (RPC) because we need count of ALL users, but RLS might block SELECT *
+    // If no RPC exists, we can try a direct count if RLS allows reading 'rating' column publicly (unlikely)
+    // Or we rely on a specific "public_stats" table.
+    // For now, let's try calling the RPC we created in the migration.
+    
+    const { data, error } = await supabase.rpc('get_five_star_count');
+    
+    if (error) {
+      // Fallback: if RPC fails/doesn't exist, return 0 or mock
+      console.warn('Could not fetch 5-star count (RPC missing?):', error.message);
+      return 0;
+    }
+    
+    return data as number;
+  } catch (err) {
+    console.error('Error fetching 5-star count:', err);
+    return 0;
+  }
 };
