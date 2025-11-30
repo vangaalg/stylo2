@@ -5,6 +5,9 @@ create table profiles (
   credits integer default 10,
   is_admin boolean default false,
   last_session_id text, -- Added for single session enforcement
+  age text,
+  height text,
+  weight text,
   created_at timestamp with time zone default timezone('utc'::text, now())
 );
 

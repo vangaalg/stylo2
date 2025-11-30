@@ -103,6 +103,9 @@ export interface User {
   email: string;
   credits: number;
   isAdmin: boolean;
+  age?: string;
+  height?: string;
+  weight?: string;
 }
 
 // Extend Window interface for Razorpay

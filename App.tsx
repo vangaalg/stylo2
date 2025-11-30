@@ -17,7 +17,8 @@ import {
   getUserHistory, 
   uploadImageToStorage, 
   saveHistoryItem,
-  getOrCreateUserProfile // Added profile creator
+  getOrCreateUserProfile, // Added profile creator
+  updateUserDetails
 } from './services/userService';
 import { swapFaceWithReplicate } from './services/replicateService';
 import { supabase, signOut } from './services/supabaseClient'; // Added supabase and signOut
@@ -50,6 +51,13 @@ const App: React.FC = () => {
         sessionTokenRef.current = token;
         const profile = await getOrCreateUserProfile(initialSession.user.id, initialSession.user.email || '', token);
         setUser(profile);
+        
+        if (profile) {
+          if (profile.age) setUserAge(profile.age);
+          if (profile.height) setUserHeight(profile.height);
+          if (profile.weight) setUserWeight(profile.weight);
+        }
+
         activeSubscription = subscribeToSessionChanges(initialSession.user.id);
       }
       setIsAuthLoading(false);
@@ -71,11 +79,21 @@ const App: React.FC = () => {
         const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '', token);
         setUser(profile);
         
+        if (profile) {
+          if (profile.age) setUserAge(profile.age);
+          if (profile.height) setUserHeight(profile.height);
+          if (profile.weight) setUserWeight(profile.weight);
+        }
+        
         // Start listening for session changes
         activeSubscription = subscribeToSessionChanges(session.user.id);
       } else {
         setUser(null);
         sessionTokenRef.current = null;
+        // Clear fields on logout
+        setUserAge('');
+        setUserHeight('');
+        setUserWeight('');
       }
       setIsAuthLoading(false);
     });
@@ -513,6 +531,15 @@ const App: React.FC = () => {
     if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
 
     try {
+      // Save user details
+      if (user && (userAge || userHeight || userWeight)) {
+         updateUserDetails(user.id, { 
+            age: userAge, 
+            height: userHeight, 
+            weight: userWeight 
+         }).catch(console.error);
+      }
+
       // Deduct credits upfront for the first 2 photos
       const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
       

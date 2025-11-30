@@ -29,7 +29,10 @@ export const getOrCreateUserProfile = async (userId: string, email: string, sess
       id: data.id,
       email: data.email,
       credits: data.credits,
-      isAdmin: data.is_admin
+      isAdmin: data.is_admin,
+      age: data.age,
+      height: data.height,
+      weight: data.weight
     };
   }
 
@@ -64,6 +67,15 @@ export const getOrCreateUserProfile = async (userId: string, email: string, sess
 
   console.error('Error fetching profile:', error);
   return null;
+};
+
+export const updateUserDetails = async (userId: string, details: { age?: string, height?: string, weight?: string }) => {
+  const { error } = await supabase
+    .from('profiles')
+    .update(details)
+    .eq('id', userId);
+    
+  if (error) console.error("Failed to update user details:", error);
 };
 
 export const checkSessionValidity = async (userId: string, currentSessionId: string): Promise<boolean> => {
