@@ -1142,10 +1142,14 @@ const App: React.FC = () => {
         <input 
           type="file" 
           ref={fileInputRef} 
-          accept="image/png, image/jpeg, image/jpg, image/webp, image/heic, image/*" 
+          accept="image/*" 
+          multiple 
           onChange={handleUserUpload} 
           className="hidden" 
         />
+        <p className="text-xs text-zinc-600 mt-2">
+          Android Users: Select "Browse" or "Photos" if Gallery doesn't show previews.
+        </p>
       </div>
     </div>
   );
@@ -1183,10 +1187,14 @@ const App: React.FC = () => {
         <input 
           type="file" 
           ref={fileInputRef} 
-          accept="image/png, image/jpeg, image/jpg, image/webp, image/heic, image/*" 
+          accept="image/*" 
+          multiple
           onChange={handleClothUpload} 
           className="hidden" 
         />
+        <p className="text-xs text-zinc-600 mt-2">
+          Android Users: Select "Browse" or "Photos" if Gallery doesn't show previews.
+        </p>
       </div>
 
       <div className="flex justify-center">
