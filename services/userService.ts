@@ -218,32 +218,61 @@ export const uploadImageToStorage = async (userId: string, imageDataUrl: string)
 
 // 2. Save Record to Database
 export const saveHistoryItem = async (userId: string, imageUrl: string, style: string) => {
-  // Get the current authenticated user to ensure RLS compliance
-  const { data: { user } } = await supabase.auth.getUser();
-  
-  if (!user) {
-    console.error('Error saving history: No authenticated user found');
-    return;
-  }
-
-  if (user.id !== userId) {
-    console.warn('Warning: mismatch between passed userId and authenticated user. Using authenticated user ID.');
-  }
-
-  const targetUserId = user.id;
-
-  const { error } = await supabase
-    .from('generated_history')
-    .insert([
-      { user_id: targetUserId, image_url: imageUrl, style: style }
-    ]);
-
-  if (error) {
-    console.error('Error saving history:', error);
-    // Add more detailed error logging for debugging 403s
-    if (error.code === '42501' || error.code === 'PGRST301') {
-       console.error('RLS Policy Violation. Check if:\n1. User is logged in\n2. user_id matches auth.uid()\n3. INSERT policy exists');
+  try {
+    // Get the current session to ensure RLS compliance
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError) {
+      console.error('[History] Session error:', sessionError);
+      return;
     }
+
+    if (!session || !session.user) {
+      console.error('[History] No active session found. User must be logged in.');
+      return;
+    }
+
+    const authenticatedUserId = session.user.id;
+    
+    // Log for debugging
+    console.log('[History] Attempting insert:', {
+      passedUserId: userId,
+      authenticatedUserId: authenticatedUserId,
+      match: userId === authenticatedUserId,
+      hasAccessToken: !!session.access_token
+    });
+
+    // Use authenticated user ID from session (this is what auth.uid() will return)
+    const { data, error } = await supabase
+      .from('generated_history')
+      .insert([
+        { user_id: authenticatedUserId, image_url: imageUrl, style: style }
+      ])
+      .select(); // Add select to get response data
+
+    if (error) {
+      console.error('[History] Insert error:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        authenticatedUserId: authenticatedUserId
+      });
+      
+      if (error.code === '42501' || error.code === 'PGRST301') {
+        console.error('[History] RLS Policy Violation Details:', {
+          '1. User logged in?': !!session,
+          '2. auth.uid() should be': authenticatedUserId,
+          '3. user_id being inserted': authenticatedUserId,
+          '4. Session valid?': session.expires_at ? new Date(session.expires_at * 1000) > new Date() : 'unknown',
+          '5. Access token exists?': !!session.access_token
+        });
+      }
+    } else {
+      console.log('[History] Successfully saved:', data);
+    }
+  } catch (err: any) {
+    console.error('[History] Unexpected error:', err);
   }
 };
 
