@@ -44,18 +44,6 @@ const App: React.FC = () => {
     let activeSubscription: any = null;
 
     const setupAuth = async () => {
-      // Clear any URL hash fragments from OAuth redirect
-      if (window.location.hash) {
-        const hash = window.location.hash;
-        // Check if it's an auth redirect
-        if (hash.includes('access_token') || hash.includes('error')) {
-          // Let Supabase handle it, then clean up URL
-          setTimeout(() => {
-            window.history.replaceState(null, '', window.location.pathname + window.location.search);
-          }, 100);
-        }
-      }
-
       // Check active session
       const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
       
@@ -82,6 +70,9 @@ const App: React.FC = () => {
           }
           
           setUser(profile);
+
+          // Fetch History
+          getUserHistory(initialSession.user.id).then(items => setHistory(items));
           
           // 1. Try to restore redirect state
           const savedState = sessionStorage.getItem('styleGenie_redirect_state');
@@ -109,6 +100,14 @@ const App: React.FC = () => {
           console.error("Error setting up auth:", error);
         }
       }
+      
+      // If we have a hash that looks like a redirect, keep loading state true
+      // and let onAuthStateChange handle the finalization to avoid flicker/race conditions
+      if (!initialSession && window.location.hash && window.location.hash.includes('access_token')) {
+        console.log("Detected auth redirect hash, waiting for auth event...");
+        return; 
+      }
+      
       setIsAuthLoading(false);
     };
 
@@ -142,6 +141,14 @@ const App: React.FC = () => {
           }
           
           setUser(profile);
+          
+          // Clean up URL hash if it's an auth redirect
+          if (window.location.hash && window.location.hash.includes('access_token')) {
+             window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+
+          // Fetch History
+          getUserHistory(session.user.id).then(items => setHistory(items));
           
           // Restore redirect state if pending (and not handled by setupAuth)
           const savedState = sessionStorage.getItem('styleGenie_redirect_state');
@@ -266,7 +273,7 @@ const App: React.FC = () => {
       setShowLoginModal(true);
     }
   };
-
+  
   const [showPayment, setShowPayment] = useState(false);
 
   // --- App Logic State ---
@@ -306,7 +313,7 @@ const App: React.FC = () => {
   const [history, setHistory] = useState<{url: string, style: string, date: string}[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showWaitModal, setShowWaitModal] = useState(false);
-
+  
   // UI State
   const [showCamera, setShowCamera] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
@@ -600,7 +607,7 @@ const App: React.FC = () => {
 
   const handleGenerate = async (backgroundMode: boolean = false) => {
     if (!userImage || !clothImage || !userAnalysis || !user) return;
-    
+
     setShowWaitModal(false);
     
     if (backgroundMode && 'Notification' in window) {
@@ -639,7 +646,7 @@ const App: React.FC = () => {
     
     // Add hair details if available
     if (userAnalysis.hairStyle) userDesc += `, Hair: ${userAnalysis.hairStyle}, ${userAnalysis.hairColor}, ${userAnalysis.hairLength}`;
-    
+
     const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
     const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
     
@@ -693,11 +700,11 @@ const App: React.FC = () => {
           perfLogger.start(`Gemini Gen Style ${index + 1}`);
           
           const generatedImage = await generateTryOnImage(
-            userImage, 
-            clothImage, 
-            userDesc, 
-            clothDesc, 
-            style.promptSuffix,
+          userImage, 
+          clothImage, 
+          userDesc, 
+          clothDesc, 
+          style.promptSuffix,
             (msg) => {}, // No verbose logs to avoid flicker
             clothAnalysis?.hasFaceInImage || false,
             qualityMode // Pass selected quality mode
@@ -1122,7 +1129,7 @@ const App: React.FC = () => {
                   ? "⚠️ Uses Gemini 3 Pro (Slower). Takes 2-3 minutes per photo but produces higher detail."
                   : "⚡ Uses Gemini 2.5 Flash (Fast). Generates quickly but with less detail."}
               </p>
-            </div>
+             </div>
           </div>
         </div>
       </div>
@@ -1148,7 +1155,7 @@ const App: React.FC = () => {
         </div>
         
         <div className="flex gap-4">
-          <button 
+        <button 
             onClick={() => setStep(AppStep.UPLOAD_CLOTH)}
             className="flex-1 bg-zinc-800 text-white py-4 rounded-xl font-bold text-lg hover:bg-zinc-700 transition border border-zinc-700"
           >
@@ -1157,12 +1164,12 @@ const App: React.FC = () => {
           <button 
             onClick={startGenerationFlow}
             className="flex-[2] bg-gradient-to-r from-indigo-600 to-pink-600 hover:from-indigo-500 hover:to-pink-500 text-white py-4 rounded-xl font-bold text-lg shadow-xl shadow-indigo-900/20 transform transition hover:-translate-y-1 flex justify-center items-center gap-2"
-          >
-            <span>Generate Lookbook</span>
-            {!user?.isAdmin && (
-               <span className="bg-black/20 text-xs px-2 py-1 rounded-full">Cost: 3 Credits</span>
-            )}
-          </button>
+        >
+          <span>Generate Lookbook</span>
+          {!user?.isAdmin && (
+             <span className="bg-black/20 text-xs px-2 py-1 rounded-full">Cost: 3 Credits</span>
+          )}
+        </button>
         </div>
       </div>
     </div>
@@ -1186,18 +1193,18 @@ const App: React.FC = () => {
     const totalStyles = STYLES.length;
     
     return (
-      <div className="space-y-8 animate-fade-in">
-        <div className="flex justify-between items-center">
+    <div className="space-y-8 animate-fade-in">
+      <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
             Your Lookbook {isStillGenerating && `(${loadedCount}/${totalStyles})`}
           </h2>
-          <button 
-            onClick={handleReset}
-            className="text-sm text-zinc-400 hover:text-white underline decoration-zinc-600 underline-offset-4"
-          >
-            Start Over
-          </button>
-        </div>
+        <button 
+          onClick={handleReset}
+          className="text-sm text-zinc-400 hover:text-white underline decoration-zinc-600 underline-offset-4"
+        >
+          Start Over
+        </button>
+      </div>
 
         {isStillGenerating && (
           <div className="space-y-3">
@@ -1221,7 +1228,7 @@ const App: React.FC = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Show generated images */}
           {/* We render ALL styles, but some might be empty/locked */}
           {STYLES.map((style, idx) => {
@@ -1257,7 +1264,7 @@ const App: React.FC = () => {
                               <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                               </svg>
-                            </div>
+            </div>
                             <h4 className="text-white font-bold text-sm mb-2">Custom Creation</h4>
                             
                             <textarea 
@@ -1344,7 +1351,7 @@ const App: React.FC = () => {
                 <div className="flex flex-col gap-1">
                   <span className="inline-block self-start px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-xs font-medium border border-white/20">
                     {style.name}
-                  </span>
+              </span>
                   {style.synopsis && (
                     <p className="text-[10px] text-zinc-300 leading-tight line-clamp-2">
                       {style.synopsis}
@@ -1365,11 +1372,11 @@ const App: React.FC = () => {
                         downloadImage(img.url, `try-on-${style.name}.png`);
                       }}
                       className="p-2 bg-white text-black rounded-full shadow-lg hover:bg-zinc-200 transition-all"
-                      title="Download"
-                    >
+                title="Download"
+              >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
                     </button>
                   )}
                   
@@ -1388,7 +1395,7 @@ const App: React.FC = () => {
                       </svg>
                     </button>
                   )}
-              </div>
+            </div>
               )}
               
               {/* Explicit Regenerate Button for Failed State */}
@@ -1406,7 +1413,7 @@ const App: React.FC = () => {
                       </svg>
                       Regenerate
                     </button>
-                 </div>
+          </div>
               )}
             </div>
           )})}
@@ -1453,9 +1460,9 @@ const App: React.FC = () => {
                       <p className="text-zinc-600 text-xs">Waiting...</p>
                     </div>
                   )}
-                </div>
-              </div>
-            );
+      </div>
+    </div>
+  );
           })}
         </div>
       </div>
@@ -1575,7 +1582,7 @@ const App: React.FC = () => {
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
-
+      
       {showPayment && (
         <PaymentModal 
           onClose={() => setShowPayment(false)} 
@@ -1677,7 +1684,7 @@ const App: React.FC = () => {
               processClothImage(base64);
             }
           }} 
-          onCancel={() => setShowCamera(false)}
+          onCancel={() => setShowCamera(false)} 
           defaultCamera={step === AppStep.UPLOAD_CLOTH ? 'environment' : 'user'}
         />
       )}
@@ -1699,15 +1706,15 @@ const App: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-pink-500 flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                </svg>
-              </div>
-              <h1 className="font-bold text-lg tracking-tight hidden sm:block">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-pink-500 flex items-center justify-center">
+              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg>
+            </div>
+            <h1 className="font-bold text-lg tracking-tight hidden sm:block">
                 StyleGenie <span className="text-xs bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full ml-1 font-normal">v2.0</span>
-              </h1>
+            </h1>
             </div>
           </div>
 
@@ -1728,25 +1735,25 @@ const App: React.FC = () => {
                         {user.name.split(' ')[0]}
                       </span>
                     )}
-                    <span className={`text-sm font-bold ${user.isAdmin ? 'text-indigo-400' : 'text-zinc-300'}`}>
+                  <span className={`text-sm font-bold ${user.isAdmin ? 'text-indigo-400' : 'text-zinc-300'}`}>
                       {user.isAdmin ? 'Unlimited' : `${user.credits} Cr`}
-                    </span>
-                    {!user.isAdmin && (
-                      <button 
+                  </span>
+                  {!user.isAdmin && (
+                    <button 
                         onClick={(e) => {
                           e.stopPropagation();
                           setShowPayment(true);
                         }}
-                        className="ml-2 text-xs text-indigo-400 hover:text-white font-semibold"
-                      >
+                      className="ml-2 text-xs text-indigo-400 hover:text-white font-semibold"
+                    >
                         +
-                      </button>
-                    )}
-                 </div>
-                 <div className="h-6 w-px bg-zinc-800"></div>
+                    </button>
+                  )}
+               </div>
+             <div className="h-6 w-px bg-zinc-800"></div>
                  <button onClick={handleReset} className="text-xs font-medium text-zinc-500 hover:text-zinc-300 transition">
                    New
-                 </button>
+             </button>
                </>
              ) : (
                <button 
