@@ -44,4 +44,21 @@ function createMockClient() {
   } as any;
 }
 
+export const signInWithGoogle = async () => {
+  if (!client) return { error: { message: "Supabase not configured" } };
+  
+  const { data, error } = await client.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.origin
+    }
+  });
+  return { data, error };
+};
+
+export const signOut = async () => {
+  if (!client) return { error: null };
+  return await client.auth.signOut();
+};
+
 export const supabase = client;

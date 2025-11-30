@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { CameraCapture } from './components/CameraCapture';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { PaymentModal } from './components/PaymentModal';
+import { LoginModal } from './components/LoginModal'; // Added LoginModal
 import { 
   analyzeUserFace, 
   analyzeClothItem, 
@@ -9,8 +10,16 @@ import {
   removeFaceFromClothingImage,
   enhanceStylePrompt
 } from './services/geminiService';
-import { deductCredits, addCredits, getUserHistory, uploadImageToStorage, saveHistoryItem } from './services/userService';
-import { swapFaceWithReplicate } from './services/replicateService'; // Added import
+import { 
+  deductCredits, 
+  addCredits, 
+  getUserHistory, 
+  uploadImageToStorage, 
+  saveHistoryItem,
+  getOrCreateUserProfile // Added profile creator
+} from './services/userService';
+import { swapFaceWithReplicate } from './services/replicateService';
+import { supabase, signOut } from './services/supabaseClient'; // Added supabase and signOut
 import { 
   AppStep, 
   UserAnalysis, 
@@ -21,15 +30,52 @@ import {
 } from './types';
 
 const App: React.FC = () => {
-  // --- MOCK AUTH FOR TESTING PHASE ---
-  // We initialize with a dummy user so you can test features without Supabase
-  const [user, setUser] = useState<User | null>({
-    id: 'test-guest-id',
-    email: 'guest@stylegenie.com',
-    credits: 50,
-    isAdmin: false 
-  });
-  
+  // --- AUTH STATE ---
+  const [user, setUser] = useState<User | null>(null); // Default to null (Guest)
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  // Listen for Auth Changes
+  useEffect(() => {
+    // Check active session
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '');
+        setUser(profile);
+      }
+      setIsAuthLoading(false);
+    });
+
+    // Listen for changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const profile = await getOrCreateUserProfile(session.user.id, session.user.email || '');
+        setUser(profile);
+      } else {
+        setUser(null);
+      }
+      setIsAuthLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSignOut = async () => {
+    await signOut();
+    setUser(null);
+    setStep(AppStep.UPLOAD_USER);
+    setHistory([]);
+  };
+
+  // Protected Action Handler
+  const requireAuth = (action: () => void) => {
+    if (user) {
+      action();
+    } else {
+      setShowLoginModal(true);
+    }
+  };
+
   const [showPayment, setShowPayment] = useState(false);
 
   // --- App Logic State ---
@@ -340,7 +386,14 @@ const App: React.FC = () => {
   };
 
   const startGenerationFlow = () => {
-    if (!userImage || !clothImage || !userAnalysis || !user) return;
+    if (!userImage || !clothImage || !userAnalysis) return;
+    
+    // Require Auth for Generation
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
+
     const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
     if (!user.isAdmin && user.credits < AUTO_GEN_COST) {
       setShowPayment(true);
@@ -519,7 +572,13 @@ const App: React.FC = () => {
   };
 
   const handleRegenerate = async (index: number) => {
-    if (!userImage || !clothImage || !userAnalysis || !user || index < 0 || index >= STYLES.length) return;
+    if (!userImage || !clothImage || !userAnalysis || index < 0 || index >= STYLES.length) return;
+
+    // Require Auth
+    if (!user) {
+      setShowLoginModal(true);
+      return;
+    }
     
     // 2. We'll assume 1 credit for Fast, 2 for Quality (as discussed in plan, though not strictly enforced yet in code, let's add basic check)
     const cost = qualityMode === 'quality' ? 2 : 1;
@@ -527,110 +586,114 @@ const App: React.FC = () => {
     const style = STYLES[index];
     const styleName = style.name;
 
-    // Check for custom creation prompt
-    if (styleName === "Custom Creation" && !customPromptText.trim()) {
-      alert("Please enter a description for your custom style.");
-      return;
-    }
-    
-    // If it's a regeneration (already done/failed) OR an unlock (undefined status)
-    // We should check credits.
-    if (!user.isAdmin && user.credits < cost) {
-        setShowPayment(true);
+    requireAuth(async () => {
+      // Check for custom creation prompt
+      if (styleName === "Custom Creation" && !customPromptText.trim()) {
+        alert("Please enter a description for your custom style.");
         return;
-    }
+      }
+      
+      // If it's a regeneration (already done/failed) OR an unlock (undefined status)
+      // We should check credits.
+      if (user && !user.isAdmin && user.credits < cost) {
+          setShowPayment(true);
+          return;
+      }
 
-    // Deduct credits if not admin
-    if (!user.isAdmin) {
-       try {
-         if (user.id === 'test-guest-id') {
-            setUser({ ...user, credits: user.credits - cost });
-         } else {
-            const newBalance = await deductCredits(user.id, user.credits, cost);
-            setUser({ ...user, credits: newBalance });
+      // Deduct credits if not admin
+      if (user && !user.isAdmin) {
+         try {
+           if (user.id === 'test-guest-id') {
+              setUser({ ...user, credits: user.credits - cost });
+           } else {
+              const newBalance = await deductCredits(user.id, user.credits, cost);
+              setUser({ ...user, credits: newBalance });
+           }
+         } catch (e) {
+           console.error("Credit deduction failed", e);
+           return;
          }
-       } catch (e) {
-         console.error("Credit deduction failed", e);
-         return;
-       }
-    }
-    
-    // Update status to regenerating
-    setGeneratedImages(prev => {
-      const newImages = [...prev];
-      // Ensure the array is large enough
-      if (!newImages[index]) {
-         newImages[index] = { style: styleName, url: '', status: 'regenerating' };
-      } else {
-         newImages[index] = { ...newImages[index], status: 'regenerating' };
       }
-      return newImages;
+      
+      // Update status to regenerating
+      setGeneratedImages(prev => {
+        const newImages = [...prev];
+        // Ensure the array is large enough
+        if (!newImages[index]) {
+           newImages[index] = { style: styleName, url: '', status: 'regenerating' };
+        } else {
+           newImages[index] = { ...newImages[index], status: 'regenerating' };
+        }
+        return newImages;
+      });
+
+      // Build descriptions again (in case state changed, though likely same)
+      let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
+      if (userAge) userDesc += `, age ${userAge}`;
+      if (userHeight) userDesc += `, height ${userHeight}`;
+      if (userWeight) userDesc += `, weight ${userWeight}`;
+      if (userAnalysis.hairStyle) userDesc += `, Hair: ${userAnalysis.hairStyle}, ${userAnalysis.hairColor}, ${userAnalysis.hairLength}`;
+
+      const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
+      const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
+      let clothDesc = `${finalClothType}, ${finalColor}, ${clothAnalysis?.pattern}`;
+      if (clothAnalysis?.texture) clothDesc += `, Material: ${clothAnalysis.texture}`;
+      if (clothAnalysis?.fit) clothDesc += `, Fit: ${clothAnalysis.fit}`;
+      if (clothAnalysis?.neckline) clothDesc += `, Neckline: ${clothAnalysis.neckline}`;
+      if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
+
+      try {
+        // Determine prompt suffix
+        let finalPromptSuffix = style.promptSuffix;
+        
+        // If custom, enhance the prompt first
+        if (styleName === "Custom Creation") {
+          finalPromptSuffix = await enhanceStylePrompt(customPromptText);
+        }
+
+        // 1. Gemini Step
+        const generatedImage = await generateTryOnImage(
+          userImage, 
+          clothImage, 
+          userDesc, 
+          clothDesc, 
+          finalPromptSuffix, // Use the enhanced prompt
+          (msg) => {}, 
+          clothAnalysis?.hasFaceInImage || false,
+          qualityMode
+        );
+
+        // Update to swapping state
+        setGeneratedImages(prev => {
+          const newImages = [...prev];
+          newImages[index] = { style: styleName, url: generatedImage, status: 'swapping' };
+          return newImages;
+        });
+
+        // 2. Replicate Step
+        const finalImage = await swapFaceWithReplicate(userImage, generatedImage);
+
+        // Success
+        setGeneratedImages(prev => {
+          const newImages = [...prev];
+          newImages[index] = { style: styleName, url: finalImage, status: 'done' };
+          return newImages;
+        });
+        
+        // Save to history
+        if (user) {
+          addToHistory({ url: finalImage, style: styleName });
+        }
+
+      } catch (err) {
+        console.error(`Regeneration failed for ${styleName}:`, err);
+        setGeneratedImages(prev => {
+          const newImages = [...prev];
+          newImages[index] = { style: styleName, url: '', status: 'failed' };
+          return newImages;
+        });
+      }
     });
-
-    // Build descriptions again (in case state changed, though likely same)
-    let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
-    if (userAge) userDesc += `, age ${userAge}`;
-    if (userHeight) userDesc += `, height ${userHeight}`;
-    if (userWeight) userDesc += `, weight ${userWeight}`;
-    if (userAnalysis.hairStyle) userDesc += `, Hair: ${userAnalysis.hairStyle}, ${userAnalysis.hairColor}, ${userAnalysis.hairLength}`;
-
-    const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
-    const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
-    let clothDesc = `${finalClothType}, ${finalColor}, ${clothAnalysis?.pattern}`;
-    if (clothAnalysis?.texture) clothDesc += `, Material: ${clothAnalysis.texture}`;
-    if (clothAnalysis?.fit) clothDesc += `, Fit: ${clothAnalysis.fit}`;
-    if (clothAnalysis?.neckline) clothDesc += `, Neckline: ${clothAnalysis.neckline}`;
-    if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
-
-    try {
-      // Determine prompt suffix
-      let finalPromptSuffix = style.promptSuffix;
-      
-      // If custom, enhance the prompt first
-      if (styleName === "Custom Creation") {
-        finalPromptSuffix = await enhanceStylePrompt(customPromptText);
-      }
-
-      // 1. Gemini Step
-      const generatedImage = await generateTryOnImage(
-        userImage, 
-        clothImage, 
-        userDesc, 
-        clothDesc, 
-        finalPromptSuffix, // Use the enhanced prompt
-        (msg) => {}, 
-        clothAnalysis?.hasFaceInImage || false,
-        qualityMode
-      );
-
-      // Update to swapping state
-      setGeneratedImages(prev => {
-        const newImages = [...prev];
-        newImages[index] = { style: styleName, url: generatedImage, status: 'swapping' };
-        return newImages;
-      });
-
-      // 2. Replicate Step
-      const finalImage = await swapFaceWithReplicate(userImage, generatedImage);
-
-      // Success
-      setGeneratedImages(prev => {
-        const newImages = [...prev];
-        newImages[index] = { style: styleName, url: finalImage, status: 'done' };
-        return newImages;
-      });
-      
-      // Save to history
-      addToHistory({ url: finalImage, style: styleName });
-
-    } catch (err) {
-      console.error(`Regeneration failed for ${styleName}:`, err);
-      setGeneratedImages(prev => {
-        const newImages = [...prev];
-        newImages[index] = { style: styleName, url: '', status: 'failed' };
-        return newImages;
-      });
-    }
   };
 
   const handleReset = () => {
@@ -1243,7 +1306,9 @@ const App: React.FC = () => {
             <div className="space-y-2">
               <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Navigation</p>
               <button onClick={() => {setStep(AppStep.UPLOAD_USER); setIsSidebarOpen(false);}} className="block w-full text-left text-zinc-300 hover:text-white py-2">Start New Look</button>
-              <button onClick={() => { setShowHistory(true); setIsSidebarOpen(false); }} className="block w-full text-left text-zinc-300 hover:text-white py-2">My History</button>
+              {user && (
+                <button onClick={() => { setShowHistory(true); setIsSidebarOpen(false); }} className="block w-full text-left text-zinc-300 hover:text-white py-2">My History</button>
+              )}
             </div>
             
             <div className="space-y-2">
@@ -1257,15 +1322,25 @@ const App: React.FC = () => {
                   <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-transform ${qualityMode === 'quality' ? 'left-6' : 'left-1'}`} />
                 </div>
               </div>
+              {user && (
+                <button onClick={() => { handleSignOut(); setIsSidebarOpen(false); }} className="block w-full text-left text-red-400 hover:text-red-300 py-2">Sign Out</button>
+              )}
             </div>
           </div>
           
           <div className="absolute bottom-6 left-6 right-6">
-            <div className="bg-zinc-800 p-4 rounded-xl">
-              <p className="text-xs text-zinc-400 mb-2">Credits Balance</p>
-              <p className="text-xl font-bold text-white">{user?.credits || 0}</p>
-              <button onClick={() => {setShowPayment(true); setIsSidebarOpen(false);}} className="mt-3 w-full bg-indigo-600 text-white text-xs font-bold py-2 rounded-lg hover:bg-indigo-500">Top Up</button>
-            </div>
+            {user ? (
+              <div className="bg-zinc-800 p-4 rounded-xl">
+                <p className="text-xs text-zinc-400 mb-2">Credits Balance</p>
+                <p className="text-xl font-bold text-white">{user.credits}</p>
+                <button onClick={() => {setShowPayment(true); setIsSidebarOpen(false);}} className="mt-3 w-full bg-indigo-600 text-white text-xs font-bold py-2 rounded-lg hover:bg-indigo-500">Top Up</button>
+              </div>
+            ) : (
+              <div className="bg-zinc-800 p-4 rounded-xl text-center">
+                <p className="text-sm text-zinc-300 mb-3">Sign in to save your styles and get 10 free credits!</p>
+                <button onClick={() => {setShowLoginModal(true); setIsSidebarOpen(false);}} className="w-full bg-white text-black text-xs font-bold py-2 rounded-lg hover:bg-zinc-200">Sign In</button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1384,6 +1459,10 @@ const App: React.FC = () => {
         />
       )}
 
+      {showLoginModal && (
+        <LoginModal onClose={() => setShowLoginModal(false)} />
+      )}
+
       {/* Header */}
       <header className="sticky top-0 z-40 w-full border-b border-zinc-800 bg-zinc-950/80 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
@@ -1400,35 +1479,42 @@ const App: React.FC = () => {
                 </svg>
               </div>
               <h1 className="font-bold text-lg tracking-tight hidden sm:block">
-                StyleGenie <span className="text-xs bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full ml-1 font-normal">v2.0 TEST MODE</span>
+                StyleGenie <span className="text-xs bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full ml-1 font-normal">v2.0</span>
               </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-             {/* Credit Display */}
-             {user && (
-               <div className="bg-zinc-900 rounded-full px-4 py-1.5 border border-zinc-800 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
-                  <span className={`text-sm font-bold ${user.isAdmin ? 'text-indigo-400' : 'text-zinc-300'}`}>
-                    {user.isAdmin ? 'Unlimited' : `${user.credits} Credits`}
-                  </span>
-                  {!user.isAdmin && (
-                    <button 
-                      onClick={() => setShowPayment(true)}
-                      className="ml-2 text-xs text-indigo-400 hover:text-white font-semibold"
-                    >
-                      + ADD
-                    </button>
-                  )}
-               </div>
+             {/* Auth & Credit Display */}
+             {user ? (
+               <>
+                 <div className="bg-zinc-900 rounded-full px-4 py-1.5 border border-zinc-800 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                    <span className={`text-sm font-bold ${user.isAdmin ? 'text-indigo-400' : 'text-zinc-300'}`}>
+                      {user.isAdmin ? 'Unlimited' : `${user.credits} Cr`}
+                    </span>
+                    {!user.isAdmin && (
+                      <button 
+                        onClick={() => setShowPayment(true)}
+                        className="ml-2 text-xs text-indigo-400 hover:text-white font-semibold"
+                      >
+                        +
+                      </button>
+                    )}
+                 </div>
+                 <div className="h-6 w-px bg-zinc-800"></div>
+                 <button onClick={handleReset} className="text-xs font-medium text-zinc-500 hover:text-zinc-300 transition">
+                   New
+                 </button>
+               </>
+             ) : (
+               <button 
+                 onClick={() => setShowLoginModal(true)}
+                 className="bg-white text-black px-4 py-2 rounded-full text-sm font-bold hover:bg-zinc-200 transition"
+               >
+                 Sign In
+               </button>
              )}
-
-             <div className="h-6 w-px bg-zinc-800"></div>
-
-             <button onClick={handleLogout} className="text-xs font-medium text-zinc-500 hover:text-zinc-300 transition">
-               Reset
-             </button>
           </div>
         </div>
       </header>

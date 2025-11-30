@@ -2,6 +2,55 @@ import { supabase } from './supabaseClient';
 import { User } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
+export const getOrCreateUserProfile = async (userId: string, email: string): Promise<User | null> => {
+  // 1. Try to get existing profile
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (data) {
+    return {
+      id: data.id,
+      email: data.email,
+      credits: data.credits,
+      isAdmin: data.is_admin
+    };
+  }
+
+  // 2. If not found, create new profile with 10 free credits
+  if (error && error.code === 'PGRST116') { // Code for no rows found
+    const { data: newProfile, error: createError } = await supabase
+      .from('profiles')
+      .insert([
+        { 
+          id: userId, 
+          email: email,
+          credits: 10, // Free Trial Credits
+          is_admin: false 
+        }
+      ])
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('Error creating profile:', createError);
+      return null;
+    }
+
+    return {
+      id: newProfile.id,
+      email: newProfile.email,
+      credits: newProfile.credits,
+      isAdmin: newProfile.is_admin
+    };
+  }
+
+  console.error('Error fetching profile:', error);
+  return null;
+};
+
 export const getUserProfile = async (userId: string): Promise<User | null> => {
   const { data, error } = await supabase
     .from('profiles')
