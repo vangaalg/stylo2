@@ -346,3 +346,71 @@ export const getFiveStarCount = async (): Promise<number> => {
     return 0;
   }
 };
+
+// --- Transactions ---
+
+// Save transaction
+export const saveTransaction = async (
+  userId: string,
+  razorpay_payment_id: string,
+  razorpay_order_id: string,
+  amount: number,
+  credits_added: number,
+  package_name: string
+) => {
+  try {
+    const { data, error } = await supabase
+      .from('transactions')
+      .insert([
+        {
+          user_id: userId,
+          razorpay_payment_id,
+          razorpay_order_id,
+          amount: amount * 100, // Convert to paise
+          currency: 'INR',
+          credits_added,
+          package_name,
+          status: 'completed'
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error saving transaction:', error);
+      throw error;
+    }
+
+    return data;
+  } catch (err) {
+    console.error('Error in saveTransaction:', err);
+    throw err;
+  }
+};
+
+// Get user transactions
+export const getUserTransactions = async (userId: string) => {
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error('Error fetching transactions:', error);
+    return [];
+  }
+
+  return data.map(tx => ({
+    id: tx.id,
+    payment_id: tx.razorpay_payment_id,
+    order_id: tx.razorpay_order_id,
+    amount: tx.amount / 100, // Convert from paise to rupees
+    currency: tx.currency,
+    credits: tx.credits_added,
+    package_name: tx.package_name,
+    status: tx.status,
+    date: tx.created_at
+  }));
+};

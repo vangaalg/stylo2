@@ -2,7 +2,13 @@ import React, { useState } from 'react';
 
 interface PaymentModalProps {
   onClose: () => void;
-  onSuccess: (amount: number) => void; // Updated to pass amount/credits
+  onSuccess: (amount: number, transactionData?: {
+    razorpay_payment_id: string;
+    razorpay_order_id: string;
+    amount: number;
+    credits: number;
+    package_name: string;
+  }) => void;
 }
 
 // REPLACE THIS WITH YOUR ACTUAL RAZORPAY KEY ID (From Razorpay Dashboard)
@@ -115,7 +121,13 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
 
             console.log("Payment verified successfully:", verifyData);
             setIsProcessing(false);
-            onSuccess(pkg.credits);
+            onSuccess(pkg.credits, {
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              amount: pkg.price,
+              credits: pkg.credits,
+              package_name: pkg.name
+            });
           } catch (verifyError: any) {
             console.error("Payment verification error:", verifyError);
             setError("Payment completed but verification failed. Please contact support with Payment ID: " + response.razorpay_payment_id);

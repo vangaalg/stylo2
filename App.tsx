@@ -20,7 +20,9 @@ import {
   getOrCreateUserProfile, // Added profile creator
   updateUserDetails,
   updateRating,
-  getFiveStarCount
+  getFiveStarCount,
+  saveTransaction,
+  getUserTransactions
 } from './services/userService';
 import { swapFaceWithReplicate } from './services/replicateService';
 import { supabase, signOut } from './services/supabaseClient'; // Added supabase and signOut
@@ -348,6 +350,20 @@ const App: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
   const [showWaitModal, setShowWaitModal] = useState(false);
   
+  // Transaction State
+  const [transactions, setTransactions] = useState<{
+    id: string;
+    payment_id: string;
+    order_id: string;
+    amount: number;
+    currency: string;
+    credits: number;
+    package_name: string;
+    status: string;
+    date: string;
+  }[]>([]);
+  const [showTransactions, setShowTransactions] = useState(false);
+  
   // Timer State
   const [countdownTimer, setCountdownTimer] = useState<number>(300); // 5 minutes in seconds
   const [totalTimeTaken, setTotalTimeTaken] = useState<number | null>(null); // Total time in seconds
@@ -395,6 +411,21 @@ const App: React.FC = () => {
     };
     loadHistory();
   }, [user?.id]);
+
+  // Load transactions when modal opens
+  useEffect(() => {
+    const loadTransactions = async () => {
+      if (showTransactions && user?.id && user.id !== 'test-guest-id') {
+        try {
+          const txData = await getUserTransactions(user.id);
+          setTransactions(txData);
+        } catch (error) {
+          console.error('Failed to load transactions:', error);
+        }
+      }
+    };
+    loadTransactions();
+  }, [showTransactions, user?.id]);
 
   // Countdown Timer Effect (Global)
   useEffect(() => {
@@ -573,10 +604,36 @@ const App: React.FC = () => {
 
   // --- Handlers ---
 
-  const handlePaymentSuccess = async (addedCredits: number) => {
+  const handlePaymentSuccess = async (
+    addedCredits: number, 
+    transactionData?: {
+      razorpay_payment_id: string;
+      razorpay_order_id: string;
+      amount: number;
+      credits: number;
+      package_name: string;
+    }
+  ) => {
     if (!user) return;
     try {
-      // Mock DB update for test user
+      // Save transaction if data provided
+      if (transactionData && user.id !== 'test-guest-id') {
+        try {
+          await saveTransaction(
+            user.id,
+            transactionData.razorpay_payment_id,
+            transactionData.razorpay_order_id,
+            transactionData.amount,
+            transactionData.credits,
+            transactionData.package_name
+          );
+        } catch (txError) {
+          console.error("Failed to save transaction:", txError);
+          // Continue with credit update even if transaction save fails
+        }
+      }
+
+      // Update credits
       if (user.id === 'test-guest-id') {
          setUser({ ...user, credits: user.credits + addedCredits });
       } else {
@@ -586,7 +643,7 @@ const App: React.FC = () => {
       }
       setShowPayment(false);
     } catch (e) {
-      console.error("Failed to update credits", e);
+      console.error("Failed to update credits or save transaction", e);
     }
   };
 
@@ -1895,7 +1952,10 @@ const App: React.FC = () => {
               <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Navigation</p>
               <button onClick={() => {setStep(AppStep.UPLOAD_USER); setIsSidebarOpen(false);}} className="block w-full text-left text-zinc-300 hover:text-white py-2">Start New Look</button>
               {user && (
-                <button onClick={() => { setShowHistory(true); setIsSidebarOpen(false); }} className="block w-full text-left text-zinc-300 hover:text-white py-2">My History</button>
+                <>
+                  <button onClick={() => { setShowHistory(true); setIsSidebarOpen(false); }} className="block w-full text-left text-zinc-300 hover:text-white py-2">My History</button>
+                  <button onClick={() => { setShowTransactions(true); setIsSidebarOpen(false); }} className="block w-full text-left text-zinc-300 hover:text-white py-2">Transactions</button>
+                </>
               )}
             </div>
             
@@ -2033,6 +2093,81 @@ const App: React.FC = () => {
               <div className="mt-6 text-center text-xs text-zinc-500">
                 Auto-saves last 5 generated styles
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transactions Modal */}
+      {showTransactions && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Transaction History</h2>
+              <button onClick={() => setShowTransactions(false)} className="text-zinc-400 hover:text-white">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto">
+              {transactions.length === 0 ? (
+                <div className="text-center py-12 text-zinc-500">
+                  <svg className="w-16 h-16 mx-auto mb-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p>No transactions yet.</p>
+                  <p className="text-sm mt-1">Your payment history will appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {transactions.map((tx) => (
+                    <div key={tx.id} className="bg-zinc-800/50 rounded-xl border border-zinc-700 p-4 hover:border-zinc-600 transition">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className={`w-2 h-2 rounded-full ${tx.status === 'completed' ? 'bg-green-500' : tx.status === 'failed' ? 'bg-red-500' : 'bg-yellow-500'}`}></div>
+                            <h3 className="font-semibold text-white">{tx.package_name}</h3>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              tx.status === 'completed' ? 'bg-green-500/20 text-green-400' : 
+                              tx.status === 'failed' ? 'bg-red-500/20 text-red-400' : 
+                              'bg-yellow-500/20 text-yellow-400'
+                            }`}>
+                              {tx.status}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4 text-sm text-zinc-400">
+                            <div>
+                              <span className="text-zinc-500">Amount:</span>
+                              <span className="ml-2 font-medium text-white">₹{tx.amount.toFixed(2)}</span>
+                            </div>
+                            <div>
+                              <span className="text-zinc-500">Credits:</span>
+                              <span className="ml-2 font-medium text-indigo-400">+{tx.credits}</span>
+                            </div>
+                            <div>
+                              <span className="text-zinc-500">Payment ID:</span>
+                              <span className="ml-2 font-mono text-xs text-zinc-500">{tx.payment_id.substring(0, 12)}...</span>
+                            </div>
+                            <div>
+                              <span className="text-zinc-500">Date:</span>
+                              <span className="ml-2 text-zinc-300">
+                                {new Date(tx.date).toLocaleDateString('en-IN', { 
+                                  day: 'numeric', 
+                                  month: 'short', 
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
