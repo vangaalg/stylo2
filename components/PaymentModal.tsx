@@ -89,16 +89,39 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
         description: pkg.description,
         image: "https://cdn-icons-png.flaticon.com/512/3514/3514331.png",
         order_id: orderData.id,
-        handler: function (response: any) {
-          // Payment Success
+        handler: async function (response: any) {
+          // Payment Success - Verify signature on backend
           console.log("Payment ID: ", response.razorpay_payment_id);
           console.log("Order ID: ", response.razorpay_order_id);
           console.log("Signature: ", response.razorpay_signature);
           
-          // TODO: Verify signature on backend for security
-          
-          setIsProcessing(false);
-          onSuccess(pkg.credits);
+          try {
+            // Verify payment signature on backend
+            const verifyResponse = await fetch('/api/verify-payment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              })
+            });
+
+            const verifyData = await verifyResponse.json();
+
+            if (!verifyResponse.ok || !verifyData.success) {
+              throw new Error(verifyData.error || 'Payment verification failed');
+            }
+
+            console.log("Payment verified successfully:", verifyData);
+            setIsProcessing(false);
+            onSuccess(pkg.credits);
+          } catch (verifyError: any) {
+            console.error("Payment verification error:", verifyError);
+            setError("Payment completed but verification failed. Please contact support with Payment ID: " + response.razorpay_payment_id);
+            setIsProcessing(false);
+            setSelectedPackage(null);
+          }
         },
         prefill: {
           name: "StyleGenie User", 
