@@ -619,7 +619,7 @@ const App: React.FC = () => {
       // Save transaction if data provided
       if (transactionData && user.id !== 'test-guest-id') {
         try {
-          await saveTransaction(
+          const savedTx = await saveTransaction(
             user.id,
             transactionData.razorpay_payment_id,
             transactionData.razorpay_order_id,
@@ -627,8 +627,24 @@ const App: React.FC = () => {
             transactionData.credits,
             transactionData.package_name
           );
-        } catch (txError) {
-          console.error("Failed to save transaction:", txError);
+          console.log("✅ Transaction saved successfully:", savedTx);
+        } catch (txError: any) {
+          console.error("❌ Failed to save transaction:", txError);
+          console.error("Transaction error details:", {
+            message: txError?.message,
+            code: txError?.code,
+            details: txError?.details,
+            hint: txError?.hint,
+            fullError: txError
+          });
+          // Show error to user for debugging (only in development or if critical)
+          if (txError?.code === 'PGRST116' || txError?.message?.includes('relation') || txError?.message?.includes('does not exist')) {
+            alert(`⚠️ Transaction table not found. Please run the SQL migration CREATE_TRANSACTIONS_TABLE.sql in Supabase.`);
+          } else if (txError?.code === '42501' || txError?.message?.includes('permission') || txError?.message?.includes('policy')) {
+            alert(`⚠️ Permission denied. Please check RLS policies for transactions table.`);
+          } else {
+            console.warn("Transaction save failed but payment was successful. Credits will still be added.");
+          }
           // Continue with credit update even if transaction save fails
         }
       }

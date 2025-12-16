@@ -46,7 +46,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
       id: 'single',
       name: 'Single Look',
       credits: 4,
-      price: 99,
+      price: 1,
       description: '4 Credits (~1 Auto-Gen Look)'
     }
   };
