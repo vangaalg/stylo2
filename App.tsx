@@ -193,6 +193,24 @@ const App: React.FC = () => {
               if (parsed.userAnalysis) setUserAnalysis(parsed.userAnalysis);
               if (parsed.clothAnalysis) setClothAnalysis(parsed.clothAnalysis);
 
+              // Check if we should auto-start generation after signin
+              if (parsed.step === AppStep.CONFIRMATION) {
+                // User was on confirmation page, check if they have all required data
+                const hasAllData = parsed.userImage && parsed.clothImage && 
+                                   parsed.userAnalysis && parsed.clothAnalysis &&
+                                   parsed.userHeight && parsed.userWeight;
+                
+                if (hasAllData) {
+                  // Auto-start generation after a short delay to ensure state is set
+                  setTimeout(() => {
+                    // Close login modal if open
+                    setShowLoginModal(false);
+                    // Start generation flow directly
+                    setShowWaitModal(true);
+                  }, 500);
+                }
+              }
+
               sessionStorage.removeItem('styleGenie_redirect_state');
              } catch(e) { console.error("Failed to restore state:", e); }
           } else if (profile) {
@@ -464,7 +482,7 @@ const App: React.FC = () => {
     };
   }, [isStillGenerating, countdownTimer]);
 
-  // Auto-hide stop buttons after 10 seconds
+  // Auto-hide stop buttons after 13 seconds (3s delay + 10s active)
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -476,7 +494,7 @@ const App: React.FC = () => {
           const index = parseInt(key);
           const elapsed = (now - updated[index]) / 1000;
           
-          if (elapsed >= 10) {
+          if (elapsed >= 13) {
             delete updated[index];
             changed = true;
           }
@@ -1811,9 +1829,33 @@ const App: React.FC = () => {
     return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex justify-between items-center">
+        <div className="flex items-center gap-4">
+          {/* Back button */}
+          <button
+            onClick={() => {
+              // Stop all ongoing generations
+              STYLES.forEach((_, idx) => {
+                if (abortControllers[idx]) {
+                  abortControllers[idx].abort();
+                }
+              });
+              setCancelledGenerations(new Set(STYLES.map((_, idx) => idx)));
+              setIsStillGenerating(false);
+              // Go back to confirmation step
+              setStep(AppStep.CONFIRMATION);
+            }}
+            className="text-zinc-400 hover:text-white transition flex items-center gap-2"
+            title="Back to lookbook page"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back
+          </button>
           <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-zinc-400">
             Your Lookbook {isStillGenerating && `(${loadedCount}/${totalStyles})`}
           </h2>
+        </div>
         <button 
           onClick={handleReset}
           className="text-sm text-zinc-400 hover:text-white underline decoration-zinc-600 underline-offset-4"
@@ -1898,13 +1940,16 @@ const App: React.FC = () => {
              const timer = imageTimers[idx] || 0;
              const showTimer = (isPending || isRegenerating || isSwapping) && timer > 0;
 
-             // Calculate stop button visibility
+             // Calculate stop button visibility with delay
              const startTime = generationStartTimes[idx];
              const elapsed = startTime ? (Date.now() - startTime) / 1000 : 0;
              const isGenerating = img?.status === 'generating';
              const isSwappingForStop = img?.status === 'swapping';
+             const STOP_BUTTON_DELAY = 3; // Show after 3 seconds
+             const STOP_BUTTON_DURATION = 10; // Available for 10 seconds total
              const showStopButton = startTime && 
-                                   elapsed < 10 && 
+                                   elapsed >= STOP_BUTTON_DELAY && // Wait 3 seconds before showing
+                                   elapsed < (STOP_BUTTON_DELAY + STOP_BUTTON_DURATION) && // Show for 10 seconds
                                    (isGenerating || isSwappingForStop) &&
                                    !cancelledGenerations.has(idx);
              
@@ -1934,7 +1979,7 @@ const App: React.FC = () => {
                     
                     {/* Countdown indicator */}
                     <div className="absolute top-2 left-2 z-50 bg-black/70 text-white px-2 py-1 rounded text-xs font-mono">
-                      {Math.max(0, Math.ceil(10 - elapsed))}s
+                      {Math.max(0, Math.ceil(13 - elapsed))}s
                     </div>
                   </>
                 )}
