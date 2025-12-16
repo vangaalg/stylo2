@@ -628,6 +628,35 @@ const App: React.FC = () => {
             transactionData.package_name
           );
           console.log("✅ Transaction saved successfully:", savedTx);
+          
+          // Send receipt email
+          try {
+            const emailResponse = await fetch('/api/send-receipt-email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: user.email,
+                userName: user.name || user.email.split('@')[0],
+                paymentId: transactionData.razorpay_payment_id,
+                orderId: transactionData.razorpay_order_id,
+                amount: transactionData.amount,
+                credits: transactionData.credits,
+                packageName: transactionData.package_name,
+                websiteUrl: window.location.origin
+              })
+            });
+            
+            if (emailResponse.ok) {
+              console.log("✅ Receipt email sent successfully");
+            } else {
+              const emailError = await emailResponse.json();
+              console.warn("⚠️ Failed to send receipt email:", emailError);
+              // Don't block the flow if email fails
+            }
+          } catch (emailError) {
+            console.warn("⚠️ Error sending receipt email:", emailError);
+            // Don't block the flow if email fails
+          }
         } catch (txError: any) {
           console.error("❌ Failed to save transaction:", txError);
           console.error("Transaction error details:", {
@@ -2161,9 +2190,9 @@ const App: React.FC = () => {
                               <span className="text-zinc-500">Credits:</span>
                               <span className="ml-2 font-medium text-indigo-400">+{tx.credits}</span>
                             </div>
-                            <div>
+                            <div className="col-span-2">
                               <span className="text-zinc-500">Payment ID:</span>
-                              <span className="ml-2 font-mono text-xs text-zinc-500">{tx.payment_id.substring(0, 12)}...</span>
+                              <span className="ml-2 font-mono text-xs text-zinc-300 break-all">{tx.payment_id}</span>
                             </div>
                             <div>
                               <span className="text-zinc-500">Date:</span>
