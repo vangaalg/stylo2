@@ -411,12 +411,15 @@ const App: React.FC = () => {
   
   // Wake Lock for preventing device sleep during generation
   const wakeLockRef = useRef<any>(null);
+  const failedRetryTimersRef = useRef<Record<number, NodeJS.Timeout>>({});
 
   // Timers for individual images
   const [imageTimers, setImageTimers] = useState<{[key: number]: number}>({});
   
   // Ratings state
   const [ratings, setRatings] = useState<{[key: string]: number}>({});
+  const [ratingSubmitted, setRatingSubmitted] = useState<{[key: string]: boolean}>({});
+  const [hoveredStar, setHoveredStar] = useState<{[key: string]: number}>({});
 
   // 5-Star Stats
   const [fiveStarCount, setFiveStarCount] = useState<number>(0);
@@ -506,6 +509,34 @@ const App: React.FC = () => {
     
     return () => clearInterval(interval);
   }, []);
+
+  // Auto-retry failed generations after 10 seconds
+  useEffect(() => {
+    generatedImages.forEach((img, index) => {
+      if (img?.status === 'failed') {
+        // If we don't have a timer for this failed image, create one
+        if (!failedRetryTimersRef.current[index]) {
+          failedRetryTimersRef.current[index] = setTimeout(() => {
+            console.log(`Auto-retrying failed generation for ${img.style} (index ${index})`);
+            handleRegenerate(index);
+            delete failedRetryTimersRef.current[index];
+          }, 10000); // 10 seconds delay
+        }
+      } else {
+        // If status changed from failed, clear the timer
+        if (failedRetryTimersRef.current[index]) {
+          clearTimeout(failedRetryTimersRef.current[index]);
+          delete failedRetryTimersRef.current[index];
+        }
+      }
+    });
+    
+    return () => {
+      // Cleanup all timers on unmount
+      Object.values(failedRetryTimersRef.current).forEach(timer => clearTimeout(timer));
+      failedRetryTimersRef.current = {};
+    };
+  }, [generatedImages]);
 
   // Individual Image Timers Effect
   useEffect(() => {
@@ -1332,14 +1363,21 @@ const App: React.FC = () => {
          }
       }
       
-      // Update status to regenerating
+      // Create AbortController for this regeneration
+      const abortController = new AbortController();
+      setAbortControllers(prev => ({ ...prev, [index]: abortController }));
+      
+      // Record start time for stop button
+      setGenerationStartTimes(prev => ({ ...prev, [index]: Date.now() }));
+      
+      // Update status to generating (so stop button can appear)
       setGeneratedImages(prev => {
         const newImages = [...prev];
         // Ensure the array is large enough
         if (!newImages[index]) {
-           newImages[index] = { style: styleName, url: '', status: 'regenerating' };
+           newImages[index] = { style: styleName, url: '', status: 'generating' };
         } else {
-           newImages[index] = { ...newImages[index], status: 'regenerating' };
+           newImages[index] = { ...newImages[index], status: 'generating' };
         }
         return newImages;
       });
@@ -1400,6 +1438,11 @@ const App: React.FC = () => {
       if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
 
       try {
+        // Check for cancellation before starting
+        if (abortController.signal.aborted || cancelledGenerations.has(index)) {
+          return;
+        }
+        
         // Determine prompt suffix
         let finalPromptSuffix = style.promptSuffix;
         
@@ -1421,6 +1464,16 @@ const App: React.FC = () => {
           preserveHeadwear, // Pass headwear choice
           userAnalysis?.headwearType // Pass headwear type
         );
+        
+        // Check if cancelled during generation
+        if (abortController.signal.aborted || cancelledGenerations.has(index)) {
+          setGeneratedImages(prev => {
+            const newImages = [...prev];
+            newImages[index] = { style: styleName, url: '', status: 'cancelled' };
+            return newImages;
+          });
+          return;
+        }
 
         // Update to swapping state
         setGeneratedImages(prev => {
@@ -1439,8 +1492,20 @@ const App: React.FC = () => {
           return newImages;
         });
         
-        // Clear timer
+        // Clear timer and start time
         setImageTimers(prev => ({ ...prev, [index]: 0 }));
+        setGenerationStartTimes(prev => {
+          const updated = { ...prev };
+          delete updated[index];
+          return updated;
+        });
+        
+        // Clean up abort controller
+        setAbortControllers(prev => {
+          const updated = { ...prev };
+          delete updated[index];
+          return updated;
+        });
         
         // Save to history
         if (user) {
@@ -1448,12 +1513,21 @@ const App: React.FC = () => {
         }
 
       } catch (err) {
-        console.error(`Regeneration failed for ${styleName}:`, err);
-        setGeneratedImages(prev => {
-          const newImages = [...prev];
-          newImages[index] = { style: styleName, url: '', status: 'failed' };
-          return newImages;
-        });
+        if (!abortController.signal.aborted && !cancelledGenerations.has(index)) {
+          console.error(`Regeneration failed for ${styleName}:`, err);
+          setGeneratedImages(prev => {
+            const newImages = [...prev];
+            newImages[index] = { style: styleName, url: '', status: 'failed' };
+            return newImages;
+          });
+          
+          // Clean up abort controller on failure
+          setAbortControllers(prev => {
+            const updated = { ...prev };
+            delete updated[index];
+            return updated;
+          });
+        }
       }
     });
   };
@@ -1509,6 +1583,11 @@ const App: React.FC = () => {
     if (user && imageUrl) {
       await updateRating(imageUrl, rating);
     }
+    
+    // Fade out the rating window after showing the thank you message briefly
+    setTimeout(() => {
+      setRatingSubmitted(prev => ({ ...prev, [imageUrl]: true }));
+    }, 1500); // Show thank you message for 1.5 seconds, then fade out
   };
 
   // --- Render Steps ---
@@ -2222,6 +2301,7 @@ const App: React.FC = () => {
                            bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/50 rounded-xl p-3 
                            transition-all duration-500 
                            ${ratings[img.url] ? 'bg-indigo-900/10 border-indigo-500/20' : 'hover:bg-zinc-800/80 hover:border-zinc-700'}
+                           ${ratingSubmitted[img.url] ? 'opacity-0 pointer-events-none transform scale-95' : 'opacity-100 transform scale-100'}
                            flex flex-col items-center justify-center gap-2`}
                 onClick={(e) => e.stopPropagation()}
               >
@@ -2241,27 +2321,42 @@ const App: React.FC = () => {
                 )}
 
                 <div className="flex gap-1.5">
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <button
-                      key={star}
-                      onClick={() => handleRating(idx, star, img.url)}
-                      className="group/star focus:outline-none transition-transform active:scale-95"
-                    >
-                      <svg 
-                        className={`w-6 h-6 drop-shadow-sm transition-all duration-200 ${
-                          ratings[img.url] >= star 
-                            ? 'text-yellow-400 fill-yellow-400 scale-110' 
-                            : 'text-zinc-600 fill-zinc-800/50 stroke-zinc-500 hover:stroke-yellow-400 hover:fill-yellow-400/20 hover:scale-110'
-                        }`}
-                        viewBox="0 0 24 24" 
-                        strokeWidth={1.5}
-                        strokeLinecap="round" 
-                        strokeLinejoin="round"
+                  {[1, 2, 3, 4, 5].map((star) => {
+                    const currentRating = ratings[img.url] || 0;
+                    const hoveredRating = hoveredStar[img.url] || 0;
+                    const isFilled = currentRating >= star || (!currentRating && hoveredRating >= star);
+                    const isHovered = hoveredRating >= star && !currentRating;
+                    
+                    return (
+                      <button
+                        key={star}
+                        onClick={() => handleRating(idx, star, img.url)}
+                        onMouseEnter={() => setHoveredStar(prev => ({ ...prev, [img.url]: star }))}
+                        onMouseLeave={() => setHoveredStar(prev => {
+                          const updated = { ...prev };
+                          delete updated[img.url];
+                          return updated;
+                        })}
+                        className="group/star focus:outline-none transition-all duration-200 hover:scale-125 active:scale-95"
                       >
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                      </svg>
-                    </button>
-                  ))}
+                        <svg 
+                          className={`w-6 h-6 drop-shadow-sm transition-all duration-200 ${
+                            isFilled
+                              ? 'text-yellow-400 fill-yellow-400 scale-110' 
+                              : isHovered
+                              ? 'text-yellow-300 fill-yellow-300/40 stroke-yellow-300 scale-110'
+                              : 'text-zinc-600 fill-zinc-800/50 stroke-zinc-500 hover:stroke-yellow-400 hover:fill-yellow-400/20'
+                          }`}
+                          viewBox="0 0 24 24" 
+                          strokeWidth={1.5}
+                          strokeLinecap="round" 
+                          strokeLinejoin="round"
+                        >
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
