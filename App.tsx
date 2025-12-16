@@ -28,6 +28,7 @@ import {
 import { swapFaceWithReplicate } from './services/replicateService';
 import { supabase, signOut } from './services/supabaseClient'; // Added supabase and signOut
 import { perfLogger } from './utils/performanceLogger';
+import { calculateBMIAndAdjustWeight } from './utils/bmiCalculator';
 import confetti from 'canvas-confetti'; // Added confetti for celebration
 import { 
   AppStep, 
@@ -806,6 +807,12 @@ const App: React.FC = () => {
       return;
     }
 
+    // Validate mandatory fields
+    if (!userHeight || !userWeight) {
+      setError("⚠️ Please fill in Height and Weight for better photo generation results.");
+      return;
+    }
+
     const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
     if (!user.isAdmin && user.credits < AUTO_GEN_COST) {
       setShowPayment(true);
@@ -852,11 +859,25 @@ const App: React.FC = () => {
     // Activate wake lock to prevent device from sleeping
     await requestWakeLock();
 
-    // Build user description with age, height, weight, and hair details
+    // Build user description with age, height, weight, BMI, and hair details
     let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
     if (userAge) userDesc += `, age ${userAge}`;
     if (userHeight) userDesc += `, height ${userHeight}`;
-    if (userWeight) userDesc += `, weight ${userWeight}`;
+
+    // Calculate BMI and adjust weight if needed
+    let finalWeight = userWeight;
+    let bmiInfo = null;
+    if (userHeight && userWeight) {
+      bmiInfo = calculateBMIAndAdjustWeight(userHeight, userWeight);
+      finalWeight = bmiInfo.adjustedWeight;
+      if (bmiInfo.bmi !== null) {
+        userDesc += `, weight ${finalWeight}, BMI ${bmiInfo.bmi}`;
+      } else {
+        userDesc += `, weight ${finalWeight}`;
+      }
+    } else if (userWeight) {
+      userDesc += `, weight ${userWeight}`;
+    }
     
     // Add hair details if available
     if (userAnalysis.hairStyle) userDesc += `, Hair: ${userAnalysis.hairStyle}, ${userAnalysis.hairColor}, ${userAnalysis.hairLength}`;
@@ -1091,7 +1112,21 @@ const App: React.FC = () => {
       let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
       if (userAge) userDesc += `, age ${userAge}`;
       if (userHeight) userDesc += `, height ${userHeight}`;
-      if (userWeight) userDesc += `, weight ${userWeight}`;
+
+      // Calculate BMI and adjust weight if needed
+      let finalWeight = userWeight;
+      let bmiInfo = null;
+      if (userHeight && userWeight) {
+        bmiInfo = calculateBMIAndAdjustWeight(userHeight, userWeight);
+        finalWeight = bmiInfo.adjustedWeight;
+        if (bmiInfo.bmi !== null) {
+          userDesc += `, weight ${finalWeight}, BMI ${bmiInfo.bmi}`;
+        } else {
+          userDesc += `, weight ${finalWeight}`;
+        }
+      } else if (userWeight) {
+        userDesc += `, weight ${userWeight}`;
+      }
       if (userAnalysis.hairStyle) userDesc += `, Hair: ${userAnalysis.hairStyle}, ${userAnalysis.hairColor}, ${userAnalysis.hairLength}`;
 
       const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
@@ -1404,9 +1439,17 @@ const App: React.FC = () => {
       {/* User Details Section with Weight & Quality */}
       <div className="bg-zinc-800/30 p-6 rounded-xl border border-zinc-700 space-y-4">
         <h3 className="text-sm font-bold text-zinc-300 uppercase tracking-wider">Additional Details</h3>
+        
+        {/* Helpful message */}
+        <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-3 text-xs text-indigo-300">
+          <p>💡 <strong>For better pictures, always fill age, height, and weight.</strong> Age is optional, but height and weight are required.</p>
+        </div>
+        
         <div className="grid grid-cols-3 gap-4">
           <div className="space-y-1">
-            <label className="text-xs text-zinc-400 block">Age</label>
+            <label className="text-xs text-zinc-400 block">
+              Age <span className="text-zinc-600">(Optional)</span>
+            </label>
             <input 
               type="text" 
               value={userAge}
@@ -1416,13 +1459,16 @@ const App: React.FC = () => {
             />
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-zinc-400 block">Height</label>
+            <label className="text-xs text-zinc-400 block">
+              Height <span className="text-red-400">*</span>
+            </label>
             <select 
               value={userHeight}
               onChange={(e) => setUserHeight(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition text-white placeholder-zinc-600 appearance-none"
+              required
             >
-              <option value="" disabled>Select height</option>
+              <option value="">Select height *</option>
               <option value="4'0">4'0"</option>
               <option value="4'1">4'1"</option>
               <option value="4'2">4'2"</option>
@@ -1456,13 +1502,16 @@ const App: React.FC = () => {
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-xs text-zinc-400 block">Weight</label>
+            <label className="text-xs text-zinc-400 block">
+              Weight <span className="text-red-400">*</span>
+            </label>
             <input 
               type="text" 
               value={userWeight}
               onChange={(e) => setUserWeight(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 transition text-white placeholder-zinc-600"
-              placeholder="e.g. 60 kg"
+              placeholder="e.g. 60 kg *"
+              required
             />
           </div>
         </div>
