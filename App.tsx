@@ -374,6 +374,8 @@ const App: React.FC = () => {
   // UI State
   const [showCamera, setShowCamera] = useState(false);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
+  const [showHeadwearChoice, setShowHeadwearChoice] = useState(false);
+  const [preserveHeadwear, setPreserveHeadwear] = useState<boolean | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Wake Lock for preventing device sleep during generation
@@ -761,7 +763,18 @@ const App: React.FC = () => {
         setUserImage(null);
       } else {
         setUserAnalysis(analysis);
-        setStep(AppStep.UPLOAD_CLOTH);
+        
+        // Check if headwear detected - show choice modal
+        if (analysis.hasHeadwear) {
+          setShowHeadwearChoice(true);
+          // Reset preserveHeadwear state
+          setPreserveHeadwear(null);
+          // Don't proceed to next step yet - wait for user choice
+        } else {
+          // No headwear, proceed normally
+          setPreserveHeadwear(null);
+          setStep(AppStep.UPLOAD_CLOTH);
+        }
       }
     } catch (err) {
       setError("⚠️ Failed to analyze image. Please try again with a clear face photo.");
@@ -974,7 +987,9 @@ const App: React.FC = () => {
           style.promptSuffix,
             (msg) => {}, // No verbose logs to avoid flicker
             clothAnalysis?.hasFaceInImage || false,
-            qualityMode // Pass selected quality mode
+            qualityMode, // Pass selected quality mode
+            preserveHeadwear, // Pass headwear choice
+            userAnalysis?.headwearType // Pass headwear type
           );
           perfLogger.end(`Gemini Gen Style ${index + 1}`);
           
@@ -1185,7 +1200,9 @@ const App: React.FC = () => {
           finalPromptSuffix, // Use the enhanced prompt
           (msg) => {}, 
           clothAnalysis?.hasFaceInImage || false,
-          qualityMode
+          qualityMode,
+          preserveHeadwear, // Pass headwear choice
+          userAnalysis?.headwearType // Pass headwear type
         );
 
         // Update to swapping state
@@ -2329,6 +2346,108 @@ const App: React.FC = () => {
 
       {showAdminDashboard && (
         <AdminDashboard onClose={() => setShowAdminDashboard(false)} />
+      )}
+
+      {/* Headwear Choice Modal */}
+      {showHeadwearChoice && userImage && userAnalysis && (
+        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-zinc-900 rounded-2xl border border-zinc-800 w-full max-w-4xl p-6">
+            <div className="text-center mb-6">
+              <h2 className="text-2xl font-bold text-white mb-2">
+                Choose Your Look
+              </h2>
+              <p className="text-zinc-400">
+                We detected <span className="text-indigo-400 font-semibold">{userAnalysis.headwearType || 'headwear'}</span> in your photo. How would you like to proceed?
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-6 mb-6">
+              {/* Option 1: With Headwear */}
+              <div 
+                className={`relative rounded-xl overflow-hidden border-2 cursor-pointer transition-all ${
+                  preserveHeadwear === true 
+                    ? 'border-indigo-500 ring-4 ring-indigo-500/50' 
+                    : 'border-zinc-700 hover:border-zinc-600'
+                }`}
+                onClick={() => setPreserveHeadwear(true)}
+              >
+                <div className="aspect-[3/4] bg-zinc-800">
+                  <img 
+                    src={userImage} 
+                    alt="With headwear" 
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4">
+                  <h3 className="text-white font-bold text-lg mb-1">
+                    Continue with {userAnalysis.headwearType || 'Headwear'}
+                  </h3>
+                  <p className="text-zinc-300 text-sm">
+                    Keep your {userAnalysis.headwearType || 'headwear'} in all generated styles
+                  </p>
+                </div>
+                {preserveHeadwear === true && (
+                  <div className="absolute top-4 right-4 bg-indigo-500 rounded-full p-2 shadow-lg">
+                    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+
+              {/* Option 2: Face Only */}
+              <div 
+                className={`relative rounded-xl overflow-hidden border-2 cursor-pointer transition-all ${
+                  preserveHeadwear === false 
+                    ? 'border-indigo-500 ring-4 ring-indigo-500/50' 
+                    : 'border-zinc-700 hover:border-zinc-600'
+                }`}
+                onClick={() => setPreserveHeadwear(false)}
+              >
+                <div className="aspect-[3/4] bg-zinc-800 flex items-center justify-center">
+                  <div className="text-center p-8">
+                    <svg className="w-20 h-20 text-zinc-600 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <p className="text-zinc-400 text-sm font-medium">Face Only</p>
+                    <p className="text-zinc-500 text-xs mt-1">Preview</p>
+                  </div>
+                </div>
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 to-transparent p-4">
+                  <h3 className="text-white font-bold text-lg mb-1">Just Face</h3>
+                  <p className="text-zinc-300 text-sm">
+                    Remove {userAnalysis.headwearType || 'headwear'} for casual styles
+                  </p>
+                </div>
+                {preserveHeadwear === false && (
+                  <div className="absolute top-4 right-4 bg-indigo-500 rounded-full p-2 shadow-lg">
+                    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-center">
+              <button
+                onClick={() => {
+                  if (preserveHeadwear !== null) {
+                    setShowHeadwearChoice(false);
+                    setStep(AppStep.UPLOAD_CLOTH);
+                  }
+                }}
+                disabled={preserveHeadwear === null}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-8 py-3 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                Continue
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Header */}

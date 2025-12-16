@@ -102,7 +102,17 @@ export const analyzeUserFace = async (base64Image: string): Promise<UserAnalysis
             },
           },
           {
-            text: "Analyze this image. Does it contain a clear human face? What is the apparent gender? Provide a short description. Also analyze hair details: style (curly, straight, wavy, bald, etc), color (black, blonde, brown, etc), and length (short, medium, long, etc).",
+            text: `Analyze this image. Does it contain a clear human face? What is the apparent gender? Provide a short description. Also analyze hair details: style (curly, straight, wavy, bald, etc), color (black, blonde, brown, etc), and length (short, medium, long, etc).
+
+CRITICAL: Check if the person is wearing any headwear (regardless of gender):
+- Turban (pagri/safa) - can be worn by any gender
+- Hijab/headscarf - typically worn by females
+- Cap, hat, or other headwear - can be worn by any gender
+- Religious or cultural headwear - can be worn by any gender
+- If headwear is present, specify the type (turban, hijab, cap, hat, headscarf, etc.)
+- If no headwear, set hasHeadwear to false
+
+Note: Headwear detection should be gender-neutral. Detect all types of headwear for all genders.`,
           },
         ],
       },
@@ -117,8 +127,10 @@ export const analyzeUserFace = async (base64Image: string): Promise<UserAnalysis
             hairStyle: { type: Type.STRING },
             hairColor: { type: Type.STRING },
             hairLength: { type: Type.STRING },
+            hasHeadwear: { type: Type.BOOLEAN },
+            headwearType: { type: Type.STRING },
           },
-          required: ["isFace", "gender", "description", "hairStyle", "hairColor", "hairLength"],
+          required: ["isFace", "gender", "description", "hairStyle", "hairColor", "hairLength", "hasHeadwear"],
         },
       },
     });
@@ -280,7 +292,9 @@ export const generateTryOnImage = async (
   styleSuffix: string,
   onStatusChange?: (status: string) => void,
   clothingHasFace: boolean = false,
-  qualityMode: 'fast' | 'quality' = 'fast'
+  qualityMode: 'fast' | 'quality' = 'fast',
+  preserveHeadwear?: boolean | null,
+  headwearType?: string
 ): Promise<string> => {
   try {
     if (onStatusChange) onStatusChange("Generating base look...");
@@ -290,10 +304,21 @@ export const generateTryOnImage = async (
       ? "\n      CRITICAL: Image 2 may contain a person's face. IGNORE any face in Image 2. Use ONLY the face, hair, and features from Image 1 (the person's photo). Extract ONLY the clothing details from Image 2."
       : "";
     
+    // Gender-neutral headwear instruction
+    const headwearInstruction = preserveHeadwear === true
+      ? `\n      CRITICAL HEADWEAR INSTRUCTION: The person in Image 1 is wearing ${headwearType || 'headwear'}. 
+         You MUST preserve and maintain the exact headwear in ALL generated images. 
+         The headwear is an essential part of their identity and should NEVER be removed, altered, or replaced.
+         This applies regardless of the style or clothing being tried on.`
+      : preserveHeadwear === false
+      ? `\n      CRITICAL HEADWEAR INSTRUCTION: Remove any headwear from the person in Image 1. 
+         Generate images showing only the face and hair, without any ${headwearType || 'headwear'}.`
+      : '';
+    
     const prompt = `
       You are an expert virtual fashion stylist.
       
-      Task: Create a photorealistic image of the person (from Image 1) wearing the exact clothing item (from Image 2).${faceWarning}
+      Task: Create a photorealistic image of the person (from Image 1) wearing the exact clothing item (from Image 2).${faceWarning}${headwearInstruction}
       
       COMPOSITION REQUIREMENTS (CRITICAL):
       - Full body shot from head to toe.
@@ -317,29 +342,42 @@ export const generateTryOnImage = async (
       
       Style: ${styleSuffix}
       
-      FITTING INSTRUCTIONS (CRITICAL):
-      - The clothing must have an IMPECCABLE, TAILORED FIT, like high-end designer wear.
-      - No loose, baggy, or ill-fitting areas (unless the item is specifically oversized).
-      - The fabric should drape perfectly on the body, highlighting a supermodel aesthetic.
-      - The person should have excellent posture and supermodel physique (while respecting the source body type).
+      FITTING INSTRUCTIONS (CRITICAL - HIGHEST PRIORITY):
+      - The clothing MUST FIT PERFECTLY on the body - like it was custom-tailored or professionally fitted.
+      - NO LOOSE, BAGGY, OR ILL-FITTING AREAS. The fabric should hug the body contours naturally.
+      - Dresses must fit snugly at the waist, bust, and hips - showing the body's natural shape.
+      - The fabric should drape elegantly and follow the body's curves, NOT hang loosely away from the body.
+      - Avoid any appearance of clothing being "too big" or "floating" on the person.
+      - The clothing should look like it was made specifically for this person's measurements.
+      - If the reference clothing appears loose, still make it fit well on the person in the generated image.
+      - Fabric should show natural tension and flow, not appear stretched or artificially draped.
       
-      Output: A single high-quality fashion photograph. The clothing must look naturally worn, with realistic draping and fit. Body proportions should be age-appropriate and match the specified height.
+      REALISM & PHOTOQUALITY (CRITICAL):
+      - Generate a PHOTOREALISTIC image that looks like a real professional fashion photograph.
+      - Avoid any 3D render, CGI, or artificial appearance.
+      - Natural skin texture, realistic lighting, and authentic shadows.
+      - The clothing should look like real fabric with natural wrinkles, folds, and movement.
+      - Avoid overly smooth or plastic-looking surfaces.
+      - The image should be indistinguishable from a real fashion photoshoot.
+      - Natural depth of field and realistic background blur if applicable.
+      
+      Output: A single high-quality, photorealistic fashion photograph. The clothing must fit impeccably, look naturally worn, and appear completely realistic - as if taken by a professional fashion photographer.
     `;
 
     const contents = [
-      {
-        inlineData: {
-          mimeType: "image/jpeg",
-          data: cleanBase64(userBase64),
-        },
-      },
-      {
-        inlineData: {
-          mimeType: "image/jpeg",
-          data: cleanBase64(clothBase64),
-        },
-      },
-      { text: prompt },
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: cleanBase64(userBase64),
+            },
+          },
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: cleanBase64(clothBase64),
+            },
+          },
+          { text: prompt },
     ];
 
     // Select model based on quality mode
@@ -401,7 +439,7 @@ export const generateTryOnImage = async (
         throw error;
       }
     }
-
+    
     if (!generatedImage) {
       throw new Error("No image generated by Gemini.");
     }

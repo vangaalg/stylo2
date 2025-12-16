@@ -20,6 +20,9 @@ export interface UserAnalysis {
   hairStyle: string;
   hairColor: string;
   hairLength: string;
+  // Gender-neutral headwear fields
+  hasHeadwear?: boolean;
+  headwearType?: string;  // "turban", "hijab", "cap", "hat", "headscarf", etc.
 }
 
 export interface ClothAnalysis {
