@@ -191,7 +191,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
 
   return (
     <div 
-      className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
       onClick={(e) => {
         // Close modal when clicking on overlay (but not on the modal content itself)
         if (e.target === e.currentTarget) {
@@ -200,18 +200,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
       }}
     >
       <div 
-        className="bg-zinc-900 w-full max-w-2xl rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl relative animate-fade-in flex flex-col md:flex-row max-h-[90vh] md:max-h-none"
+        className="bg-zinc-900 w-full max-w-4xl rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl relative animate-fade-in flex flex-col md:flex-row my-8 max-h-[calc(100vh-4rem)]"
         onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside modal
       >
         
-        {/* Close Button - Always visible */}
+        {/* Close Button - Always visible and prominent */}
         <button 
           onClick={onClose}
-          className="absolute top-2 right-2 md:top-4 md:right-4 text-white hover:text-zinc-300 transition z-30 bg-red-600/90 hover:bg-red-600 rounded-full p-2 shadow-lg"
+          className="absolute top-4 right-4 text-white hover:text-zinc-300 transition z-50 bg-red-600 hover:bg-red-700 rounded-full p-3 shadow-xl border-2 border-red-500"
           title="Close"
+          aria-label="Close modal"
         >
-          <svg className="w-5 h-5 md:w-5 md:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
 
@@ -230,7 +231,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
         </div>
 
         {/* Pricing Content */}
-        <div className="p-4 md:p-8 md:w-2/3 bg-zinc-950 flex flex-col max-h-[calc(90vh-200px)] md:max-h-none">
+        <div className="p-4 md:p-8 md:w-2/3 bg-zinc-950 flex flex-col overflow-hidden">
           <h3 className="text-lg md:text-xl font-bold text-white mb-4 md:mb-6">Select Package</h3>
           
           {error && (
@@ -239,7 +240,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
             </div>
           )}
 
-          <div className="space-y-3 overflow-y-auto flex-1 pr-1 scrollbar-thin scrollbar-thumb-zinc-700 mb-4">
+          <div className="space-y-3 overflow-y-auto flex-1 pr-2 mb-4 min-h-0" style={{ maxHeight: 'calc(100vh - 400px)' }}>
             {/* Intro Pack - One Time Only */}
             {(!user?.hasPurchasedIntroPack) ? (
               <div 
@@ -392,8 +393,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
             Secured by Razorpay. Supports UPI, Cards & Netbanking.
           </p>
           
-          {/* Back/Close Button - Sticky on mobile */}
-          <div className="mt-4 md:mt-6 flex gap-3 sticky bottom-0 bg-zinc-950 pt-4 pb-2 md:relative md:bg-transparent md:pt-0 md:pb-0">
+          {/* Back/Close Button - Always visible */}
+          <div className="mt-4 md:mt-6 flex gap-3 pt-4 border-t border-zinc-800">
             <button
               onClick={onClose}
               className="flex-1 bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2 text-sm md:text-base"
@@ -407,7 +408,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
               onClick={onClose}
               className="flex-1 bg-red-600 text-white hover:bg-red-700 py-3 rounded-xl font-semibold transition text-sm md:text-base"
             >
-              Cancel
+              Close
             </button>
           </div>
         </div>
