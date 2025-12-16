@@ -364,7 +364,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 </div>
               </div>
             </div>
-          ) : (
+          ) : activeTab === 'performance' ? (
             <div className="space-y-4">
               {/* Stats Summary */}
               <div className="grid grid-cols-3 gap-4">
