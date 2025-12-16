@@ -243,7 +243,7 @@ export const SupportModal: React.FC<SupportModalProps> = ({
           </form>
         </div>
       </div>
+    </div>
     );
-  };
 };
 
