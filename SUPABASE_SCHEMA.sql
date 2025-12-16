@@ -2,7 +2,7 @@
 create table profiles (
   id uuid references auth.users not null primary key,
   email text,
-  credits integer default 10,
+  credits integer default 3,
   is_admin boolean default false,
   last_session_id text, -- Added for single session enforcement
   age text,

@@ -47,7 +47,7 @@ export const getOrCreateUserProfile = async (userId: string, email: string, sess
         { 
           id: userId, 
           email: email,
-          credits: 10, 
+          credits: 3, 
           is_admin: shouldBeAdmin,
           last_session_id: sessionId
         }
@@ -151,7 +151,12 @@ export const addCredits = async (userId: string, currentCredits: number, amount:
 // --- History & Storage ---
 
 // 1. Upload Base64 or Blob URL to Supabase Storage
-export const uploadImageToStorage = async (userId: string, imageDataUrl: string): Promise<string | null> => {
+export const uploadImageToStorage = async (
+  userId: string, 
+  imageDataUrl: string, 
+  userEmail?: string,
+  style?: string
+): Promise<string | null> => {
   try {
     console.log('[Upload] Starting image upload for user:', userId);
     
@@ -160,7 +165,21 @@ export const uploadImageToStorage = async (userId: string, imageDataUrl: string)
     const blob = await res.blob();
     console.log('[Upload] Blob created, size:', blob.size, 'bytes');
     
-    const fileName = `${userId}/${uuidv4()}.png`;
+    // Get username from email (part before @)
+    const username = userEmail 
+      ? userEmail.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_') 
+      : 'user';
+    
+    // Format date/time: YYYYMMDD_HHMMSS
+    const now = new Date();
+    const dateStr = now.toISOString()
+      .replace(/[-:]/g, '')
+      .replace('T', '_')
+      .split('.')[0]; // Format: 20231215_143025
+    
+    // Create filename: username_YYYYMMDD_HHMMSS_style.png
+    const stylePart = style ? `_${style.replace(/[^a-zA-Z0-9]/g, '_')}` : '';
+    const fileName = `${userId}/${username}_${dateStr}${stylePart}.png`;
     console.log('[Upload] Uploading to:', fileName);
     
     // Add timeout wrapper
@@ -219,7 +238,7 @@ export const uploadImageToStorage = async (userId: string, imageDataUrl: string)
 };
 
 // 2. Save Record to Database
-export const saveHistoryItem = async (userId: string, imageUrl: string, style: string) => {
+export const saveHistoryItem = async (userId: string, imageUrl: string, style: string, userEmail?: string) => {
   try {
     // Get the current session to ensure RLS compliance
     const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -236,10 +255,18 @@ export const saveHistoryItem = async (userId: string, imageUrl: string, style: s
 
     const authenticatedUserId = session.user.id;
     
+    // Get email from session if not provided
+    const email = userEmail || session.user.email || '';
+    
+    // Get current date/time
+    const currentDateTime = new Date().toISOString();
+    
     // Log for debugging
     console.log('[History] Attempting insert:', {
       passedUserId: userId,
       authenticatedUserId: authenticatedUserId,
+      email: email,
+      dateTime: currentDateTime,
       match: userId === authenticatedUserId,
       hasAccessToken: !!session.access_token
     });
@@ -248,7 +275,13 @@ export const saveHistoryItem = async (userId: string, imageUrl: string, style: s
     const { data, error } = await supabase
       .from('generated_history')
       .insert([
-        { user_id: authenticatedUserId, image_url: imageUrl, style: style }
+        { 
+          user_id: authenticatedUserId, 
+          image_url: imageUrl, 
+          style: style,
+          user_email: email,
+          created_at: currentDateTime
+        }
       ])
       .select(); // Add select to get response data
 
@@ -296,6 +329,7 @@ export const getUserHistory = async (userId: string) => {
     url: item.image_url,
     style: item.style,
     date: item.created_at,
+    email: item.user_email || '',
     rating: item.rating || 0 // Include rating if available
   }));
 };
@@ -435,4 +469,56 @@ export const getUserTransactions = async (userId: string) => {
     status: tx.status,
     date: tx.created_at
   }));
+};
+
+// --- Admin Functions ---
+
+// Find user by email
+export const findUserByEmail = async (email: string) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('email', email.toLowerCase())
+    .single();
+  
+  if (error && error.code !== 'PGRST116') {
+    console.error('Error finding user:', error);
+    return null;
+  }
+  return data;
+};
+
+// Get all users (admin only)
+export const getAllUsers = async (limit: number = 200) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, email, credits, is_admin, created_at')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  
+  if (error) {
+    console.error('Error fetching users:', error);
+    return [];
+  }
+  return data || [];
+};
+
+// Gift credits to user by userId (admin function)
+export const giftCreditsToUser = async (userId: string, credits: number) => {
+  const { data: user } = await supabase
+    .from('profiles')
+    .select('credits')
+    .eq('id', userId)
+    .single();
+  
+  if (!user) throw new Error('User not found');
+  
+  const newBalance = user.credits + credits;
+  const { error } = await supabase
+    .from('profiles')
+    .update({ credits: newBalance })
+    .eq('id', userId);
+  
+  if (error) throw new Error(error.message);
+  return newBalance;
 };

@@ -348,7 +348,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // History State
-  const [history, setHistory] = useState<{url: string, style: string, date: string}[]>([]);
+  const [history, setHistory] = useState<{url: string, style: string, date: string, email?: string}[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showWaitModal, setShowWaitModal] = useState(false);
   
@@ -478,12 +478,12 @@ const App: React.FC = () => {
     // 2. Persist to Supabase (Background)
     if (user?.id) {
       try {
-        // Upload image to storage
-        const publicUrl = await uploadImageToStorage(user.id, newImage.url);
+        // Upload image to storage (with email and style for filename)
+        const publicUrl = await uploadImageToStorage(user.id, newImage.url, user.email, newImage.style);
         
         if (publicUrl) {
-          // Save metadata to DB
-          await saveHistoryItem(user.id, publicUrl, newImage.style);
+          // Save metadata to DB (with user email and date/time)
+          await saveHistoryItem(user.id, publicUrl, newImage.style, user.email);
           
           // Update state with permanent URL
           setHistory(prev => prev.map(item => 
@@ -581,6 +581,30 @@ const App: React.FC = () => {
         notification.close();
       };
     }
+  };
+
+  // Helper function to generate download filename with username, date & time
+  const generateDownloadFilename = (
+    user: User | null, 
+    style: string, 
+    date: Date, 
+    email?: string
+  ): string => {
+    // Get username from email (part before @)
+    const username = email 
+      ? email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_')
+      : (user?.email?.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_') || 'user');
+    
+    // Format date/time: YYYYMMDD_HHMMSS
+    const dateStr = date.toISOString()
+      .replace(/[-:]/g, '')
+      .replace('T', '_')
+      .split('.')[0];
+    
+    // Sanitize style name
+    const stylePart = style.replace(/[^a-zA-Z0-9]/g, '_');
+    
+    return `${username}_${dateStr}_${stylePart}.png`;
   };
 
   // Helper function to force download
@@ -1849,7 +1873,7 @@ const App: React.FC = () => {
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
-                        downloadImage(img.url, `try-on-${style.name}.png`);
+                        downloadImage(img.url, generateDownloadFilename(user, style.name, new Date()));
                       }}
                       className="p-2 bg-white text-black rounded-full shadow-lg hover:bg-zinc-200 transition-all"
                 title="Download"
@@ -2011,7 +2035,7 @@ const App: React.FC = () => {
               <button 
                 onClick={(e) => {
                   e.stopPropagation();
-                  downloadImage(selectedImage.url, `try-on-${selectedImage.style}.png`);
+                  downloadImage(selectedImage.url, generateDownloadFilename(user, selectedImage.style, new Date()));
                 }}
                 className="bg-white text-black px-6 py-2 rounded-full font-semibold hover:bg-zinc-200 transition flex items-center gap-2 shadow-lg"
               >
@@ -2101,7 +2125,7 @@ const App: React.FC = () => {
               </div>
             ) : (
               <div className="bg-zinc-800 p-4 rounded-xl text-center">
-                <p className="text-sm text-zinc-300 mb-3">Sign in to save your styles and get 10 free credits!</p>
+                <p className="text-sm text-zinc-300 mb-3">Sign in to save your styles and get 3 free credits!</p>
                 <button onClick={() => {setShowLoginModal(true); setIsSidebarOpen(false);}} className="w-full bg-white text-black text-xs font-bold py-2 rounded-lg hover:bg-zinc-200">Sign In</button>
               </div>
             )}
@@ -2186,7 +2210,7 @@ const App: React.FC = () => {
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center gap-2">
                         <p className="text-xs text-white font-medium">{item.style}</p>
                         <button 
-                          onClick={() => downloadImage(item.url, `history-${idx}.png`)}
+                          onClick={() => downloadImage(item.url, generateDownloadFilename(user, item.style, new Date(item.date), item.email))}
                           className="bg-white text-black p-2 rounded-full hover:bg-zinc-200"
                           title="Download"
                         >

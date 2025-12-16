@@ -54,7 +54,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onClose, onLoginStart })
           </div>
           <h2 className="text-2xl font-bold text-white mb-2">Sign in to StyleGenie</h2>
           <p className="text-zinc-400 text-sm">
-            Join to save your generated styles, access your history, and get <span className="text-indigo-400 font-bold">10 Free Credits</span>!
+            Join to save your generated styles, access your history, and get <span className="text-indigo-400 font-bold">3 Free Credits</span>!
           </p>
         </div>
 
