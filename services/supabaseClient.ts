@@ -18,7 +18,15 @@ let client;
 if (isSupabaseConfigured) {
   try {
     // We cast to string because the if-check guarantees they are strings
-    client = createClient(supabaseUrl as string, supabaseAnonKey as string);
+    // Configure storage to use localStorage for session persistence
+    client = createClient(supabaseUrl as string, supabaseAnonKey as string, {
+      auth: {
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        autoRefreshToken: true,
+        persistSession: true,
+        detectSessionInUrl: true
+      }
+    });
   } catch (error) {
     console.error("Supabase client initialization failed:", error);
     client = createMockClient(); 
@@ -53,7 +61,10 @@ export const signInWithGoogle = async () => {
   const { data, error } = await client.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: redirectUrl
+      redirectTo: redirectUrl,
+      queryParams: {
+        prompt: 'select_account' // Force Google to show account selection
+      }
     }
   });
   return { data, error };

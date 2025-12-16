@@ -1120,6 +1120,15 @@ const App: React.FC = () => {
         // Record start time for stop button
         setGenerationStartTimes(prev => ({ ...prev, [index]: Date.now() }));
         
+        // Set status to generating so stop button can appear
+        setGeneratedImages(prev => {
+          const newImages = [...prev];
+          if (newImages[index]) {
+            newImages[index] = { ...newImages[index], status: 'generating' };
+          }
+          return newImages;
+        });
+        
         // Initialize timer for this image (5 minutes = 300s)
         setImageTimers(prev => ({ ...prev, [index]: 300 }));
 
@@ -1966,12 +1975,13 @@ const App: React.FC = () => {
              const elapsed = startTime ? (Date.now() - startTime) / 1000 : 0;
              const isGenerating = img?.status === 'generating';
              const isSwappingForStop = img?.status === 'swapping';
+             const isPendingForStop = img?.status === 'pending'; // Also show for pending status
              const STOP_BUTTON_DELAY = 3; // Show after 3 seconds
              const STOP_BUTTON_DURATION = 10; // Available for 10 seconds total
              const showStopButton = startTime && 
                                    elapsed >= STOP_BUTTON_DELAY && // Wait 3 seconds before showing
                                    elapsed < (STOP_BUTTON_DELAY + STOP_BUTTON_DURATION) && // Show for 10 seconds
-                                   (isGenerating || isSwappingForStop) &&
+                                   (isGenerating || isSwappingForStop || isPendingForStop) && // Include pending status
                                    !cancelledGenerations.has(idx);
              
              return (
