@@ -302,6 +302,7 @@ const App: React.FC = () => {
       if (error) {
         console.error("Sign out error:", error);
       }
+      
       // Clear all state
       setUser(null);
       sessionTokenRef.current = null;
@@ -315,8 +316,21 @@ const App: React.FC = () => {
       setUserAnalysis(null);
       setClothAnalysis(null);
       setGeneratedImages([]);
+      
       // Clear any saved redirect state
       sessionStorage.removeItem('styleGenie_redirect_state');
+      
+      // Clear localStorage auth data (Supabase stores session here)
+      // This ensures a clean sign out and prevents auto-login until user signs in again
+      if (typeof window !== 'undefined') {
+        // Supabase stores session in localStorage with key pattern: sb-{project-ref}-auth-token
+        Object.keys(localStorage).forEach(key => {
+          if (key.startsWith('sb-') && key.includes('-auth-token')) {
+            localStorage.removeItem(key);
+          }
+        });
+      }
+      
       // Don't force reload - let Supabase auth state change handle it
     } catch (err) {
       console.error("Sign out failed:", err);
@@ -2879,6 +2893,17 @@ const App: React.FC = () => {
              <div className="h-6 w-px bg-zinc-800"></div>
                  <button onClick={handleReset} className="text-xs font-medium text-zinc-500 hover:text-zinc-300 transition">
                    New
+             </button>
+             <div className="h-6 w-px bg-zinc-800"></div>
+             <button 
+               onClick={handleSignOut}
+               className="text-xs font-medium text-zinc-500 hover:text-red-400 transition flex items-center gap-1.5"
+               title="Sign Out"
+             >
+               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+               </svg>
+               Sign Out
              </button>
                </>
              ) : (
