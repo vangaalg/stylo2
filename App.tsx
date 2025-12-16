@@ -4,6 +4,7 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { PaymentModal } from './components/PaymentModal';
 import { LoginModal } from './components/LoginModal'; // Added LoginModal
 import { AdminDashboard } from './components/AdminDashboard';
+import { SupportModal } from './components/SupportModal';
 import { 
   analyzeUserFace, 
   analyzeClothItem, 
@@ -43,6 +44,7 @@ const App: React.FC = () => {
   // --- AUTH STATE ---
   const [user, setUser] = useState<User | null>(null); // Default to null (Guest)
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const sessionTokenRef = useRef<string | null>(null);
 
@@ -1993,12 +1995,24 @@ const App: React.FC = () => {
             Your Lookbook {isStillGenerating && `(${loadedCount}/${totalStyles})`}
           </h2>
         </div>
-        <button 
-          onClick={handleReset}
-          className="text-sm text-zinc-400 hover:text-white underline decoration-zinc-600 underline-offset-4"
-        >
-          Start Over
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setShowSupportModal(true)}
+            className="text-sm text-zinc-400 hover:text-indigo-400 transition flex items-center gap-2"
+            title="Contact Support"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+            Support
+          </button>
+          <button 
+            onClick={handleReset}
+            className="text-sm text-zinc-400 hover:text-white underline decoration-zinc-600 underline-offset-4"
+          >
+            Start Over
+          </button>
+        </div>
       </div>
 
         {isStillGenerating && (
@@ -2968,6 +2982,23 @@ const App: React.FC = () => {
           </>
         )}
       </main>
+
+      {/* Support Modal */}
+      {showSupportModal && (
+        <SupportModal
+          onClose={() => setShowSupportModal(false)}
+          user={user}
+          relatedImageUrls={generatedImages
+            .filter(img => img?.url)
+            .map(img => img.url!)
+          }
+          creditsUsed={(() => {
+            // Calculate total credits used for all generated images
+            const costPerImage = qualityMode === 'quality' ? 2 : 1;
+            return generatedImages.filter(img => img?.url).length * costPerImage;
+          })()}
+        />
+      )}
     </div>
   );
 };

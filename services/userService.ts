@@ -522,3 +522,208 @@ export const giftCreditsToUser = async (userId: string, credits: number) => {
   if (error) throw new Error(error.message);
   return newBalance;
 };
+
+// --- Support Tickets ---
+
+// Create a support ticket
+export const createSupportTicket = async (
+  userId: string,
+  subject: string,
+  description: string,
+  relatedImageUrls: string[],
+  creditsUsed: number,
+  attachmentUrls: string[] = []
+) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user || session.user.id !== userId) {
+      throw new Error('Unauthorized');
+    }
+
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .insert({
+        user_id: userId,
+        subject,
+        description,
+        related_image_urls: relatedImageUrls,
+        credits_used: creditsUsed,
+        attachment_urls: attachmentUrls,
+        generation_date: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (err: any) {
+    console.error('Error creating support ticket:', err);
+    throw err;
+  }
+};
+
+// Get user's support tickets
+export const getUserSupportTickets = async (userId: string) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user || session.user.id !== userId) {
+      throw new Error('Unauthorized');
+    }
+
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data;
+  } catch (err: any) {
+    console.error('Error fetching support tickets:', err);
+    throw err;
+  }
+};
+
+// Admin: Get all support tickets
+export const getAllSupportTickets = async () => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      throw new Error('Unauthorized');
+    }
+
+    // Check if user is admin
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', session.user.id)
+      .single();
+
+    if (!profile?.is_admin) {
+      throw new Error('Admin access required');
+    }
+
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .select(`
+        *,
+        user:profiles!support_tickets_user_id_fkey(email, credits)
+      `)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data;
+  } catch (err: any) {
+    console.error('Error fetching all support tickets:', err);
+    throw err;
+  }
+};
+
+// Admin: Update ticket status and process refund
+export const updateSupportTicket = async (
+  ticketId: string,
+  status: 'pending' | 'in_review' | 'resolved' | 'rejected' | 'refunded',
+  adminNotes?: string,
+  creditsRefunded?: number
+) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      throw new Error('Unauthorized');
+    }
+
+    // Check if user is admin
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', session.user.id)
+      .single();
+
+    if (!profile?.is_admin) {
+      throw new Error('Admin access required');
+    }
+
+    // Get ticket to find user_id
+    const { data: ticket } = await supabase
+      .from('support_tickets')
+      .select('user_id, credits_used')
+      .eq('id', ticketId)
+      .single();
+
+    if (!ticket) {
+      throw new Error('Ticket not found');
+    }
+
+    const updateData: any = {
+      status,
+      resolved_by: session.user.id,
+      resolved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    if (adminNotes) {
+      updateData.admin_notes = adminNotes;
+    }
+
+    if (creditsRefunded && creditsRefunded > 0) {
+      updateData.credits_refunded = creditsRefunded;
+      
+      // Refund credits to user
+      const { data: userProfile } = await supabase
+        .from('profiles')
+        .select('credits')
+        .eq('id', ticket.user_id)
+        .single();
+      
+      if (userProfile) {
+        const newBalance = userProfile.credits + creditsRefunded;
+        await supabase
+          .from('profiles')
+          .update({ credits: newBalance })
+          .eq('id', ticket.user_id);
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .update(updateData)
+      .eq('id', ticketId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (err: any) {
+    console.error('Error updating support ticket:', err);
+    throw err;
+  }
+};
+
+// Upload attachment to storage
+export const uploadSupportAttachment = async (
+  userId: string,
+  file: File,
+  ticketId: string
+): Promise<string> => {
+  try {
+    const fileName = `${userId}/support/${ticketId}/${Date.now()}_${file.name}`;
+    
+    const { data, error } = await supabase.storage
+      .from('generated-images') // Reuse existing bucket
+      .upload(fileName, file, {
+        contentType: file.type,
+        upsert: false
+      });
+
+    if (error) throw error;
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('generated-images')
+      .getPublicUrl(fileName);
+
+    return publicUrl;
+  } catch (err: any) {
+    console.error('Error uploading support attachment:', err);
+    throw err;
+  }
+};

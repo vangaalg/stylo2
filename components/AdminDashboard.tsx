@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { perfLogger, LogEntry } from '../utils/performanceLogger';
-import { getAllUsers, findUserByEmail, giftCreditsToUser } from '../services/userService';
+import { getAllUsers, findUserByEmail, giftCreditsToUser, getAllSupportTickets, updateSupportTicket } from '../services/userService';
 
 interface AdminDashboardProps {
   onClose: () => void;
 }
 
-type Tab = 'users' | 'performance';
+type Tab = 'users' | 'performance' | 'support';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<Tab>('users');
@@ -21,11 +21,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
   const [userGiftInputs, setUserGiftInputs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
+  // Support tickets state
+  const [supportTickets, setSupportTickets] = useState<any[]>([]);
+  const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
+  const [adminNotes, setAdminNotes] = useState('');
+  const [refundCredits, setRefundCredits] = useState('');
 
   // Load users
   useEffect(() => {
     if (activeTab === 'users') {
       loadUsers();
+    }
+  }, [activeTab]);
+
+  // Load support tickets
+  useEffect(() => {
+    if (activeTab === 'support') {
+      loadSupportTickets();
     }
   }, [activeTab]);
 
@@ -117,6 +130,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
     user.email?.toLowerCase().includes(searchEmail.toLowerCase())
   );
 
+  // Load support tickets
+  const loadSupportTickets = async () => {
+    setLoading(true);
+    try {
+      const tickets = await getAllSupportTickets();
+      setSupportTickets(tickets || []);
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle ticket resolution
+  const handleResolveTicket = async (ticketId: string, status: 'resolved' | 'rejected' | 'refunded') => {
+    setLoading(true);
+    setMessage(null);
+    
+    try {
+      const credits = refundCredits ? parseInt(refundCredits) : undefined;
+      if (credits && credits < 0) {
+        throw new Error('Refund credits must be positive');
+      }
+      
+      await updateSupportTicket(ticketId, status, adminNotes || undefined, credits);
+      setMessage({ type: 'success', text: `Ticket ${status} successfully${credits ? ` (${credits} credits refunded)` : ''}` });
+      setSelectedTicket(null);
+      setAdminNotes('');
+      setRefundCredits('');
+      loadSupportTickets();
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const getDurationColor = (duration?: number) => {
     if (!duration) return 'text-zinc-400';
     if (duration < 1000) return 'text-green-400';
@@ -182,6 +232,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
             }`}
           >
             Performance Dashboard
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('support');
+              loadSupportTickets();
+            }}
+            className={`px-6 py-3 text-sm font-semibold transition ${
+              activeTab === 'support'
+                ? 'text-indigo-400 border-b-2 border-indigo-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            Support Tickets
           </button>
         </div>
 
@@ -368,7 +431,208 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                 </div>
               </div>
             </div>
-          )}
+          ) : activeTab === 'support' ? (
+            <div className="space-y-6">
+              {/* Message */}
+              {message && (
+                <div className={`p-4 rounded-lg ${
+                  message.type === 'success' 
+                    ? 'bg-green-900/30 border border-green-700 text-green-300' 
+                    : 'bg-red-900/30 border border-red-700 text-red-300'
+                }`}>
+                  {message.text}
+                </div>
+              )}
+
+              {/* Support Tickets List */}
+              <div className="space-y-4">
+                {loading && supportTickets.length === 0 ? (
+                  <div className="text-center py-12 text-zinc-600">Loading tickets...</div>
+                ) : supportTickets.length === 0 ? (
+                  <div className="text-center py-12 text-zinc-600">No support tickets found</div>
+                ) : (
+                  supportTickets.map((ticket) => (
+                    <div
+                      key={ticket.id}
+                      className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4 hover:border-zinc-600 transition cursor-pointer"
+                      onClick={() => setSelectedTicket(ticket)}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="font-mono text-sm text-indigo-400">{ticket.ticket_number}</span>
+                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                              ticket.status === 'pending' ? 'bg-yellow-900/30 text-yellow-400' :
+                              ticket.status === 'in_review' ? 'bg-blue-900/30 text-blue-400' :
+                              ticket.status === 'resolved' ? 'bg-green-900/30 text-green-400' :
+                              ticket.status === 'refunded' ? 'bg-purple-900/30 text-purple-400' :
+                              'bg-red-900/30 text-red-400'
+                            }`}>
+                              {ticket.status.toUpperCase()}
+                            </span>
+                          </div>
+                          <h3 className="text-white font-semibold mb-1">{ticket.subject}</h3>
+                          <p className="text-zinc-400 text-sm line-clamp-2">{ticket.description}</p>
+                          <div className="flex items-center gap-4 mt-2 text-xs text-zinc-500">
+                            <span>User: {ticket.user?.email || 'N/A'}</span>
+                            <span>Credits: {ticket.credits_used}</span>
+                            <span>{new Date(ticket.created_at).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Ticket Detail Modal */}
+              {selectedTicket && (
+                <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+                  <div className="bg-zinc-900 w-full max-w-2xl rounded-2xl border border-zinc-800 shadow-2xl max-h-[90vh] overflow-y-auto">
+                    <div className="p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-bold text-white">Ticket Details</h2>
+                        <button
+                          onClick={() => {
+                            setSelectedTicket(null);
+                            setAdminNotes('');
+                            setRefundCredits('');
+                          }}
+                          className="text-zinc-500 hover:text-white"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-xs text-zinc-500">Ticket Number</label>
+                          <p className="text-indigo-400 font-mono">{selectedTicket.ticket_number}</p>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-zinc-500">Status</label>
+                          <p className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+                            selectedTicket.status === 'pending' ? 'bg-yellow-900/30 text-yellow-400' :
+                            selectedTicket.status === 'in_review' ? 'bg-blue-900/30 text-blue-400' :
+                            selectedTicket.status === 'resolved' ? 'bg-green-900/30 text-green-400' :
+                            selectedTicket.status === 'refunded' ? 'bg-purple-900/30 text-purple-400' :
+                            'bg-red-900/30 text-red-400'
+                          }`}>
+                            {selectedTicket.status.toUpperCase()}
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-zinc-500">User Email</label>
+                          <p className="text-white">{selectedTicket.user?.email || 'N/A'}</p>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-zinc-500">Subject</label>
+                          <p className="text-white">{selectedTicket.subject}</p>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-zinc-500">Description</label>
+                          <p className="text-white whitespace-pre-wrap">{selectedTicket.description}</p>
+                        </div>
+
+                        <div>
+                          <label className="text-xs text-zinc-500">Credits Used</label>
+                          <p className="text-white">{selectedTicket.credits_used}</p>
+                        </div>
+
+                        {selectedTicket.related_image_urls && selectedTicket.related_image_urls.length > 0 && (
+                          <div>
+                            <label className="text-xs text-zinc-500 mb-2 block">Related Images</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {selectedTicket.related_image_urls.map((url: string, idx: number) => (
+                                <img key={idx} src={url} alt={`Related ${idx + 1}`} className="rounded-lg w-full" />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedTicket.admin_notes && (
+                          <div>
+                            <label className="text-xs text-zinc-500">Admin Notes</label>
+                            <p className="text-zinc-300 whitespace-pre-wrap">{selectedTicket.admin_notes}</p>
+                          </div>
+                        )}
+
+                        {selectedTicket.status === 'pending' || selectedTicket.status === 'in_review' ? (
+                          <div className="space-y-4 pt-4 border-t border-zinc-800">
+                            <div>
+                              <label className="block text-sm text-zinc-400 mb-2">Admin Notes</label>
+                              <textarea
+                                value={adminNotes}
+                                onChange={(e) => setAdminNotes(e.target.value)}
+                                rows={3}
+                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500 resize-none"
+                                placeholder="Add notes about resolution..."
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm text-zinc-400 mb-2">Refund Credits (Optional)</label>
+                              <input
+                                type="number"
+                                value={refundCredits}
+                                onChange={(e) => setRefundCredits(e.target.value)}
+                                min="0"
+                                max={selectedTicket.credits_used}
+                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-indigo-500"
+                                placeholder="Enter credits to refund"
+                              />
+                            </div>
+
+                            <div className="flex gap-3">
+                              <button
+                                onClick={() => handleResolveTicket(selectedTicket.id, 'resolved')}
+                                disabled={loading}
+                                className="flex-1 bg-green-600 hover:bg-green-500 text-white py-2 rounded-lg font-semibold transition disabled:opacity-50"
+                              >
+                                Resolve
+                              </button>
+                              <button
+                                onClick={() => handleResolveTicket(selectedTicket.id, 'refunded')}
+                                disabled={loading || !refundCredits}
+                                className="flex-1 bg-purple-600 hover:bg-purple-500 text-white py-2 rounded-lg font-semibold transition disabled:opacity-50"
+                              >
+                                Refund & Resolve
+                              </button>
+                              <button
+                                onClick={() => handleResolveTicket(selectedTicket.id, 'rejected')}
+                                disabled={loading}
+                                className="flex-1 bg-red-600 hover:bg-red-500 text-white py-2 rounded-lg font-semibold transition disabled:opacity-50"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="pt-4 border-t border-zinc-800">
+                            <p className="text-sm text-zinc-400">
+                              Resolved by: {selectedTicket.resolved_by ? 'Admin' : 'N/A'}
+                              {selectedTicket.resolved_at && ` on ${new Date(selectedTicket.resolved_at).toLocaleString()}`}
+                            </p>
+                            {selectedTicket.credits_refunded > 0 && (
+                              <p className="text-sm text-purple-400 mt-1">
+                                Credits Refunded: {selectedTicket.credits_refunded}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

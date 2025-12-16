@@ -200,23 +200,23 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
       }}
     >
       <div 
-        className="bg-zinc-900 w-full max-w-2xl rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl relative animate-fade-in flex flex-col md:flex-row"
+        className="bg-zinc-900 w-full max-w-2xl rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl relative animate-fade-in flex flex-col md:flex-row max-h-[90vh] md:max-h-none"
         onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside modal
       >
         
-        {/* Close Button */}
+        {/* Close Button - Always visible */}
         <button 
           onClick={onClose}
-          className="absolute top-4 right-4 text-zinc-500 hover:text-white transition z-20 bg-zinc-800/80 hover:bg-zinc-700 rounded-full p-2"
+          className="absolute top-2 right-2 md:top-4 md:right-4 text-white hover:text-zinc-300 transition z-30 bg-red-600/90 hover:bg-red-600 rounded-full p-2 shadow-lg"
           title="Close"
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-5 h-5 md:w-5 md:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
 
         {/* Hero Section */}
-        <div className="bg-gradient-to-br from-indigo-900 via-purple-900 to-zinc-900 p-8 text-center relative overflow-hidden md:w-1/3 flex flex-col justify-center">
+        <div className="bg-gradient-to-br from-indigo-900 via-purple-900 to-zinc-900 p-6 md:p-8 text-center relative overflow-hidden md:w-1/3 flex flex-col justify-center">
           <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-10"></div>
           <div className="relative z-10">
             <h2 className="text-2xl font-bold text-white mb-4">Get More Styles</h2>
@@ -230,8 +230,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
         </div>
 
         {/* Pricing Content */}
-        <div className="p-8 md:w-2/3 bg-zinc-950">
-          <h3 className="text-xl font-bold text-white mb-6">Select Package</h3>
+        <div className="p-4 md:p-8 md:w-2/3 bg-zinc-950 flex flex-col max-h-[calc(90vh-200px)] md:max-h-none">
+          <h3 className="text-lg md:text-xl font-bold text-white mb-4 md:mb-6">Select Package</h3>
           
           {error && (
             <div className="mb-4 p-3 bg-red-900/30 border border-red-500/50 rounded-lg text-red-200 text-xs">
@@ -239,7 +239,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
             </div>
           )}
 
-          <div className="space-y-3 overflow-y-auto max-h-[50vh] pr-1 scrollbar-thin scrollbar-thumb-zinc-700">
+          <div className="space-y-3 overflow-y-auto flex-1 pr-1 scrollbar-thin scrollbar-thumb-zinc-700 mb-4">
             {/* Intro Pack - One Time Only */}
             {(!user?.hasPurchasedIntroPack) ? (
               <div 
@@ -388,15 +388,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
             </div>
           </div>
           
-          <p className="text-center text-zinc-600 text-[10px] mt-6">
+          <p className="text-center text-zinc-600 text-[10px] mt-4 md:mt-6">
             Secured by Razorpay. Supports UPI, Cards & Netbanking.
           </p>
           
-          {/* Back/Close Button */}
-          <div className="mt-6 flex gap-3">
+          {/* Back/Close Button - Sticky on mobile */}
+          <div className="mt-4 md:mt-6 flex gap-3 sticky bottom-0 bg-zinc-950 pt-4 pb-2 md:relative md:bg-transparent md:pt-0 md:pb-0">
             <button
               onClick={onClose}
-              className="flex-1 bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2"
+              className="flex-1 bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2 text-sm md:text-base"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -405,7 +405,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
             </button>
             <button
               onClick={onClose}
-              className="flex-1 bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 py-3 rounded-xl font-semibold transition"
+              className="flex-1 bg-red-600 text-white hover:bg-red-700 py-3 rounded-xl font-semibold transition text-sm md:text-base"
             >
               Cancel
             </button>
