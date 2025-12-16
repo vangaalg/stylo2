@@ -426,6 +426,7 @@ const App: React.FC = () => {
   // Wake Lock for preventing device sleep during generation
   const wakeLockRef = useRef<any>(null);
   const failedRetryTimersRef = useRef<Record<number, NodeJS.Timeout>>({});
+  const attemptedGenerationsRef = useRef<Set<number>>(new Set()); // Track which images have been attempted
 
   // Timers for individual images
   const [imageTimers, setImageTimers] = useState<{[key: number]: number}>({});
@@ -524,14 +525,16 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Auto-retry failed generations after 10 seconds
+  // Auto-retry failed generations after 10 seconds (only for images that were actually attempted)
   useEffect(() => {
     generatedImages.forEach((img, index) => {
       if (img?.status === 'failed') {
-        // If we don't have a timer for this failed image, create one
-        if (!failedRetryTimersRef.current[index]) {
+        // Only auto-retry if this image was actually attempted (went through generating/swapping)
+        // This prevents auto-retry on initial states or manual regenerates
+        if (attemptedGenerationsRef.current.has(index) && !failedRetryTimersRef.current[index]) {
           failedRetryTimersRef.current[index] = setTimeout(() => {
             console.log(`Auto-retrying failed generation for ${img.style} (index ${index})`);
+            // Mark that we're retrying so we don't create duplicate timers
             handleRegenerate(index);
             delete failedRetryTimersRef.current[index];
           }, 10000); // 10 seconds delay
@@ -541,6 +544,14 @@ const App: React.FC = () => {
         if (failedRetryTimersRef.current[index]) {
           clearTimeout(failedRetryTimersRef.current[index]);
           delete failedRetryTimersRef.current[index];
+        }
+        // If status is generating or swapping, mark as attempted
+        if (img?.status === 'generating' || img?.status === 'swapping') {
+          attemptedGenerationsRef.current.add(index);
+        }
+        // If status is done or cancelled, remove from attempted set (cleanup)
+        if (img?.status === 'done' || img?.status === 'cancelled') {
+          attemptedGenerationsRef.current.delete(index);
         }
       }
     });
@@ -1031,6 +1042,7 @@ const App: React.FC = () => {
     setCancelledGenerations(new Set());
     setGenerationStartTimes({});
     setAbortControllers({});
+    attemptedGenerationsRef.current.clear(); // Clear attempted generations for fresh start
 
     setShowWaitModal(false);
     
@@ -1165,7 +1177,8 @@ const App: React.FC = () => {
         // Record start time for stop button
         setGenerationStartTimes(prev => ({ ...prev, [index]: Date.now() }));
         
-        // Set status to generating so stop button can appear
+        // Mark as attempted and set status to generating so stop button can appear
+        attemptedGenerationsRef.current.add(index);
         setGeneratedImages(prev => {
           const newImages = [...prev];
           if (newImages[index]) {
@@ -1384,7 +1397,8 @@ const App: React.FC = () => {
       // Record start time for stop button
       setGenerationStartTimes(prev => ({ ...prev, [index]: Date.now() }));
       
-      // Update status to generating (so stop button can appear)
+      // Mark as attempted and update status to generating (so stop button can appear)
+      attemptedGenerationsRef.current.add(index);
       setGeneratedImages(prev => {
         const newImages = [...prev];
         // Ensure the array is large enough

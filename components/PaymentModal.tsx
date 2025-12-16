@@ -190,15 +190,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-zinc-900 w-full max-w-2xl rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl relative animate-fade-in flex flex-col md:flex-row">
+    <div 
+      className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={(e) => {
+        // Close modal when clicking on overlay (but not on the modal content itself)
+        if (e.target === e.currentTarget) {
+          onClose();
+        }
+      }}
+    >
+      <div 
+        className="bg-zinc-900 w-full max-w-2xl rounded-3xl overflow-hidden border border-zinc-800 shadow-2xl relative animate-fade-in flex flex-col md:flex-row"
+        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside modal
+      >
         
         {/* Close Button */}
         <button 
           onClick={onClose}
-          className="absolute top-4 right-4 text-zinc-500 hover:text-white transition z-20"
+          className="absolute top-4 right-4 text-zinc-500 hover:text-white transition z-20 bg-zinc-800/80 hover:bg-zinc-700 rounded-full p-2"
+          title="Close"
         >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
@@ -379,6 +391,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
           <p className="text-center text-zinc-600 text-[10px] mt-6">
             Secured by Razorpay. Supports UPI, Cards & Netbanking.
           </p>
+          
+          {/* Back/Close Button */}
+          <div className="mt-6 flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 py-3 rounded-xl font-semibold transition flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              Back
+            </button>
+            <button
+              onClick={onClose}
+              className="flex-1 bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700 py-3 rounded-xl font-semibold transition"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       </div>
     </div>
