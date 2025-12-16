@@ -107,9 +107,83 @@ const swapFaceDirectly = async (
   }
 };
 
+// Add this helper function to extract and composite headwear
+const preserveHeadwearAfterSwap = async (
+  originalImageWithHeadwear: string, // Gemini-generated image (has headwear)
+  swappedImage: string, // After face swap (headwear removed)
+  headwearType?: string
+): Promise<string> => {
+  return new Promise((resolve) => {
+    const originalImg = new Image();
+    const swappedImg = new Image();
+    
+    originalImg.onload = () => {
+      swappedImg.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = swappedImg.width;
+        canvas.height = swappedImg.height;
+        const ctx = canvas.getContext('2d');
+        
+        if (!ctx) {
+          resolve(swappedImage);
+          return;
+        }
+        
+        // Draw the swapped image (with correct face)
+        ctx.drawImage(swappedImg, 0, 0);
+        
+        // Extract headwear region from original image (top 25% of image)
+        // For turban/pagdi, it's typically in the top portion
+        const headwearHeight = Math.floor(originalImg.height * 0.25);
+        const headwearWidth = originalImg.width;
+        
+        // Create a temporary canvas for headwear extraction
+        const headwearCanvas = document.createElement('canvas');
+        headwearCanvas.width = headwearWidth;
+        headwearCanvas.height = headwearHeight;
+        const headwearCtx = headwearCanvas.getContext('2d');
+        
+        if (headwearCtx) {
+          // Extract headwear region from original
+          headwearCtx.drawImage(
+            originalImg,
+            0, 0, headwearWidth, headwearHeight, // Source region
+            0, 0, headwearWidth, headwearHeight  // Destination
+          );
+          
+          // Composite headwear onto swapped image with soft blending
+          // Use destination-over to place headwear on top, but blend edges
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.globalAlpha = 0.95; // Slight transparency for natural blending
+          
+          // Scale headwear to match swapped image width if needed
+          const scaleX = swappedImg.width / originalImg.width;
+          const scaledHeadwearHeight = headwearHeight * scaleX;
+          
+          ctx.drawImage(
+            headwearCanvas,
+            0, 0, headwearWidth, headwearHeight,
+            0, 0, swappedImg.width, scaledHeadwearHeight
+          );
+          
+          ctx.globalAlpha = 1.0; // Reset
+        }
+        
+        resolve(canvas.toDataURL('image/jpeg', 0.95));
+      };
+      swappedImg.src = swappedImage;
+    };
+    
+    originalImg.src = originalImageWithHeadwear;
+  });
+};
+
+// Update swapFaceWithReplicate to accept preserveHeadwear parameter
 export const swapFaceWithReplicate = async (
   sourceImage: string, // User's original face (Base64)
-  targetImage: string  // Gemini generated image (Base64)
+  targetImage: string, // Gemini generated image (Base64)
+  preserveHeadwear?: boolean | null,
+  headwearType?: string
 ): Promise<string> => {
   
   perfLogger.start('Replicate Total');
@@ -143,15 +217,25 @@ export const swapFaceWithReplicate = async (
       try {
         while (attempts < maxAttempts) {
           await new Promise(resolve => setTimeout(resolve, 2000));
-          
+      
           const pollResponse = await fetch(`/api/swap-status?id=${predictionId}`);
-          
+      
           if (!pollResponse.ok) continue;
 
           const statusResult: ReplicatePrediction = await pollResponse.json();
 
           if (statusResult.status === "succeeded" && statusResult.output) {
-            return statusResult.output;
+            let finalImage = statusResult.output;
+            
+            // If headwear should be preserved, composite it back
+            if (preserveHeadwear === true) {
+              perfLogger.start('Headwear Preservation');
+              console.log('Preserving headwear after face swap...');
+              finalImage = await preserveHeadwearAfterSwap(targetImage, statusResult.output, headwearType);
+              perfLogger.end('Headwear Preservation');
+            }
+            
+            return finalImage;
           }
 
           if (statusResult.status === "failed" || statusResult.status === "canceled") {

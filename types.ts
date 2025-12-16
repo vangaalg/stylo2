@@ -114,6 +114,16 @@ export interface User {
   hasPurchasedIntroPack?: boolean;
 }
 
+// Image generation status type
+export type ImageStatus = 'generating' | 'swapping' | 'done' | 'failed' | 'cancelled' | 'regenerating';
+
+// Generated image interface
+export interface GeneratedImage {
+  style: string;
+  url: string;
+  status: ImageStatus;
+}
+
 // Extend Window interface for Razorpay
 declare global {
   interface Window {

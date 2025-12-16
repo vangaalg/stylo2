@@ -102,14 +102,13 @@ const App: React.FC = () => {
               sessionStorage.removeItem('styleGenie_redirect_state');
             } catch (e) { console.error("Failed to restore state", e); }
           } 
-          // 2. If no redirect state, pre-fill from profile
+          // 2. If no redirect state, pre-fill from profile (only if form is empty)
           else if (profile) {
-            if (profile.age) setUserAge(profile.age);
-            {/* If user is already set, we might want to update height if it's default */}
-            if (profile.height) setUserHeight(profile.height);
-            else setUserHeight("5'5"); // Default
-            
-            if (profile.weight) setUserWeight(profile.weight);
+            // Only populate from database if form fields are currently empty
+            // This prevents overwriting user input when they sign in
+            setUserAge(prev => prev || profile.age || '');
+            setUserHeight(prev => prev || profile.height || "5'5");
+            setUserWeight(prev => prev || profile.weight || '');
           }
 
           activeSubscription = subscribeToSessionChanges(initialSession.user.id);
@@ -125,7 +124,16 @@ const App: React.FC = () => {
         return; 
       }
       
+      // Only set loading to false after session check is complete
+      // This ensures user state is properly set before allowing interactions
       setIsAuthLoading(false);
+      
+      // Log session status for debugging
+      if (!initialSession) {
+        console.log("No active session found on page load");
+      } else {
+        console.log("Session restored successfully for:", initialSession.user.email);
+      }
     };
 
     setupAuth();
@@ -188,9 +196,9 @@ const App: React.FC = () => {
               sessionStorage.removeItem('styleGenie_redirect_state');
              } catch(e) { console.error("Failed to restore state:", e); }
           } else if (profile) {
-            // Only fill if empty to avoid overwriting
+            // Only fill if empty to avoid overwriting user input
             setUserAge(prev => prev || profile.age || '');
-            setUserHeight(prev => prev || profile.height || '');
+            setUserHeight(prev => prev || profile.height || "5'5");
             setUserWeight(prev => prev || profile.weight || '');
           }
           
@@ -343,6 +351,11 @@ const App: React.FC = () => {
   const [currentProcessingIndex, setCurrentProcessingIndex] = useState<number>(-1);
   const [processStage, setProcessStage] = useState<string>(""); // "generating" | "swapping"
   const [progressPercent, setProgressPercent] = useState<number>(0);
+  
+  // Stop button state - track generation start times and cancellation
+  const [generationStartTimes, setGenerationStartTimes] = useState<Record<number, number>>({});
+  const [cancelledGenerations, setCancelledGenerations] = useState<Set<number>>(new Set());
+  const [abortControllers, setAbortControllers] = useState<Record<number, AbortController>>({});
   const [qualityMode, setQualityMode] = useState<'fast' | 'quality'>('fast'); // Default to fast
   const [selectedImage, setSelectedImage] = useState<{url: string, style: string} | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -450,6 +463,31 @@ const App: React.FC = () => {
       if (interval) clearInterval(interval);
     };
   }, [isStillGenerating, countdownTimer]);
+
+  // Auto-hide stop buttons after 10 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setGenerationStartTimes(prev => {
+        const updated = { ...prev };
+        let changed = false;
+        
+        Object.keys(updated).forEach(key => {
+          const index = parseInt(key);
+          const elapsed = (now - updated[index]) / 1000;
+          
+          if (elapsed >= 10) {
+            delete updated[index];
+            changed = true;
+          }
+        });
+        
+        return changed ? updated : prev;
+      });
+    }, 100); // Check every 100ms
+    
+    return () => clearInterval(interval);
+  }, []);
 
   // Individual Image Timers Effect
   useEffect(() => {
@@ -838,6 +876,12 @@ const App: React.FC = () => {
   const startGenerationFlow = () => {
     if (!userImage || !clothImage || !userAnalysis) return;
     
+    // Wait for auth loading to complete before checking user
+    if (isAuthLoading) {
+      console.log("Waiting for authentication to complete...");
+      return;
+    }
+    
     // Require Auth for Generation
     if (!user) {
       setShowLoginModal(true);
@@ -858,8 +902,51 @@ const App: React.FC = () => {
     setShowWaitModal(true);
   };
 
+  // Handler to stop generation for a specific image
+  const handleStopGeneration = (index: number) => {
+    // Mark as cancelled
+    setCancelledGenerations(prev => new Set(prev).add(index));
+    
+    // Abort the controller if it exists
+    if (abortControllers[index]) {
+      abortControllers[index].abort();
+    }
+    
+    // Update status to cancelled
+    setGeneratedImages(prev => {
+      const newImages = [...prev];
+      if (newImages[index]) {
+        newImages[index] = { 
+          ...newImages[index],
+          status: 'cancelled'
+        };
+      }
+      return newImages;
+    });
+    
+    // Clean up
+    setGenerationStartTimes(prev => {
+      const updated = { ...prev };
+      delete updated[index];
+      return updated;
+    });
+    
+    setAbortControllers(prev => {
+      const updated = { ...prev };
+      delete updated[index];
+      return updated;
+    });
+    
+    console.log(`Generation stopped for image ${index}`);
+  };
+
   const handleGenerate = async (backgroundMode: boolean = false) => {
     if (!userImage || !clothImage || !userAnalysis || !user) return;
+
+    // Clear cancelled generations and start times for new generation
+    setCancelledGenerations(new Set());
+    setGenerationStartTimes({});
+    setAbortControllers({});
 
     setShowWaitModal(false);
     
@@ -982,6 +1069,18 @@ const App: React.FC = () => {
       for (let index = 0; index < 2; index++) {
         const style = STYLES[index];
         
+        // Skip if already cancelled
+        if (cancelledGenerations.has(index)) {
+          continue;
+        }
+        
+        // Create AbortController for this image
+        const abortController = new AbortController();
+        setAbortControllers(prev => ({ ...prev, [index]: abortController }));
+        
+        // Record start time for stop button
+        setGenerationStartTimes(prev => ({ ...prev, [index]: Date.now() }));
+        
         // Initialize timer for this image (5 minutes = 300s)
         setImageTimers(prev => ({ ...prev, [index]: 300 }));
 
@@ -991,6 +1090,11 @@ const App: React.FC = () => {
         setProgressPercent(10); // Started
 
         try {
+          // Check for cancellation before starting
+          if (abortController.signal.aborted || cancelledGenerations.has(index)) {
+            continue;
+          }
+          
           // 1. Gemini Step (Blocking - we wait for this to keep order and rate limits safe)
           setLoadingMessage(`Creating base style for ${style.name}...`);
           perfLogger.start(`Gemini Gen Style ${index + 1}`);
@@ -1008,6 +1112,16 @@ const App: React.FC = () => {
             userAnalysis?.headwearType // Pass headwear type
           );
           perfLogger.end(`Gemini Gen Style ${index + 1}`);
+          
+          // Check if cancelled during generation
+          if (abortController.signal.aborted || cancelledGenerations.has(index)) {
+            setGeneratedImages(prev => {
+              const newImages = [...prev];
+              newImages[index] = { style: style.name, url: '', status: 'cancelled' };
+              return newImages;
+            });
+            continue;
+          }
           
           // 2. Trigger Replicate Step (Non-blocking for next loop iteration, but tracked for UI)
           // We start the Replicate process but DO NOT await it here.
@@ -1028,30 +1142,52 @@ const App: React.FC = () => {
             const taskId = `Replicate Swap Style ${index + 1}`;
             perfLogger.start(taskId);
             try {
+               // Check cancellation before face swap
+               if (abortController.signal.aborted || cancelledGenerations.has(index)) {
+                 return;
+               }
+               
                // This runs in background
-               const finalImage = await swapFaceWithReplicate(userImage, generatedImage);
+               const finalImage = await swapFaceWithReplicate(userImage, generatedImage, preserveHeadwear, userAnalysis?.headwearType);
                perfLogger.end(taskId);
                
-               // Update UI with final image
-               setGeneratedImages(prev => {
-                 const newImages = [...prev];
-                 newImages[index] = { style: style.name, url: finalImage, status: 'done' };
-                 return newImages;
-               });
-               
-               // Clear timer
-               setImageTimers(prev => ({ ...prev, [index]: 0 }));
+               // Final check before updating
+               if (!abortController.signal.aborted && !cancelledGenerations.has(index)) {
+                 // Update UI with final image
+                 setGeneratedImages(prev => {
+                   const newImages = [...prev];
+                   newImages[index] = { style: style.name, url: finalImage, status: 'done' };
+                   return newImages;
+                 });
+                 
+                 // Clear timer and start time
+                 setImageTimers(prev => ({ ...prev, [index]: 0 }));
+                 setGenerationStartTimes(prev => {
+                   const updated = { ...prev };
+                   delete updated[index];
+                   return updated;
+                 });
 
-               // Save to history
-               addToHistory({ url: finalImage, style: style.name });
+                 // Save to history
+                 addToHistory({ url: finalImage, style: style.name });
+               }
             } catch (swapError) {
-               console.error(`Face swap failed for ${style.name} (background)`, swapError);
-               // Keep the Gemini image if swap fails
-               setGeneratedImages(prev => {
-                 const newImages = [...prev];
-                 newImages[index] = { style: style.name, url: generatedImage, status: 'done_with_error' };
-                 return newImages;
-               });
+               if (!abortController.signal.aborted && !cancelledGenerations.has(index)) {
+                 console.error(`Face swap failed for ${style.name} (background)`, swapError);
+                 // Keep the Gemini image if swap fails
+                 setGeneratedImages(prev => {
+                   const newImages = [...prev];
+                   newImages[index] = { style: style.name, url: generatedImage, status: 'done_with_error' };
+                   return newImages;
+                 });
+               }
+            } finally {
+              // Clean up abort controller
+              setAbortControllers(prev => {
+                const updated = { ...prev };
+                delete updated[index];
+                return updated;
+              });
             }
           })();
           
@@ -1762,6 +1898,16 @@ const App: React.FC = () => {
              const timer = imageTimers[idx] || 0;
              const showTimer = (isPending || isRegenerating || isSwapping) && timer > 0;
 
+             // Calculate stop button visibility
+             const startTime = generationStartTimes[idx];
+             const elapsed = startTime ? (Date.now() - startTime) / 1000 : 0;
+             const isGenerating = img?.status === 'generating';
+             const isSwappingForStop = img?.status === 'swapping';
+             const showStopButton = startTime && 
+                                   elapsed < 10 && 
+                                   (isGenerating || isSwappingForStop) &&
+                                   !cancelledGenerations.has(idx);
+             
              return (
             <div 
               key={idx} 
@@ -1769,6 +1915,29 @@ const App: React.FC = () => {
               onClick={() => isDone && setSelectedImage({url: img.url, style: style.name})}
             >
               <div className="aspect-[3/4] overflow-hidden relative bg-zinc-900">
+                {/* Stop Button - Only shows for first 10 seconds */}
+                {showStopButton && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleStopGeneration(idx);
+                      }}
+                      className="absolute top-2 right-2 z-50 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-lg transition-all animate-pulse"
+                      title="Stop generation (available for 10 seconds)"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      Stop
+                    </button>
+                    
+                    {/* Countdown indicator */}
+                    <div className="absolute top-2 left-2 z-50 bg-black/70 text-white px-2 py-1 rounded text-xs font-mono">
+                      {Math.max(0, Math.ceil(10 - elapsed))}s
+                    </div>
+                  </>
+                )}
                  {isLocked ? (
                     // LOCKED STATE
                     <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-zinc-900/80 backdrop-blur-sm">
