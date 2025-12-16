@@ -309,16 +309,26 @@ export const generateTryOnImage = async (
       ? `\n      CRITICAL HEADWEAR INSTRUCTION: The person in Image 1 is wearing ${headwearType || 'headwear'}. 
          You MUST preserve and maintain the exact headwear in ALL generated images. 
          The headwear is an essential part of their identity and should NEVER be removed, altered, or replaced.
-         This applies regardless of the style or clothing being tried on.`
+         This applies regardless of the style or clothing being tried on.
+         The headwear must remain exactly as shown in Image 1 - same color, same style, same wrapping.`
       : preserveHeadwear === false
       ? `\n      CRITICAL HEADWEAR INSTRUCTION: Remove any headwear from the person in Image 1. 
          Generate images showing only the face and hair, without any ${headwearType || 'headwear'}.`
+      : '';
+    
+    // Add weight/BMI instruction if weight is in description
+    const weightInstruction = userDescription.includes('weight') && userDescription.includes('BMI')
+      ? `\n      CRITICAL BODY SHAPE INSTRUCTION: The person's weight and BMI are specified in the description. 
+         You MUST generate the person with the EXACT weight and body shape as described. 
+         If BMI indicates a specific body type, reflect that accurately in the generated image.
+         Pay close attention to body proportions - if weight is reduced (BMI adjustment), show a visibly fitter, leaner body.`
       : '';
     
     const prompt = `
       You are an expert virtual fashion stylist.
       
       Task: Create a photorealistic image of the person (from Image 1) wearing the exact clothing item (from Image 2).${faceWarning}${headwearInstruction}
+      ${preserveHeadwear === true ? `\n      REMINDER: The person in Image 1 is wearing ${headwearType || 'headwear'}. This headwear MUST be preserved in the final image exactly as it appears in Image 1.` : ''}
       
       COMPOSITION REQUIREMENTS (CRITICAL):
       - Full body shot from head to toe.
@@ -333,11 +343,12 @@ export const generateTryOnImage = async (
       
       FACE AND IDENTITY (CRITICAL):
       - Use ONLY the face, hair, skin tone, and physical features from Image 1 (the person's reference photo).
+      ${preserveHeadwear === true ? `- CRITICAL HEADWEAR PRESERVATION: The person in Image 1 is wearing ${headwearType || 'headwear'} (turban/pagri/safa). You MUST preserve the exact headwear in the generated image. The headwear is an essential part of their identity and religious/cultural practice. DO NOT remove, alter, or replace the headwear under any circumstances. The headwear must remain exactly as shown in Image 1, including its color, style, and wrapping. Even during face swap operations, the headwear must be preserved.` : ''}
       - Do NOT use any face or body features from Image 2 (the clothing reference).
       - The final person must be clearly identifiable as the person from Image 1.
       
       Subject Details:
-      - Person: ${userDescription}
+      - Person: ${userDescription}${weightInstruction}
       - Clothing: ${clothDescription} (CRITICAL: Match material, texture, pattern, and fit exactly).
       
       Style: ${styleSuffix}

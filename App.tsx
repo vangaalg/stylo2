@@ -907,6 +907,17 @@ const App: React.FC = () => {
     if (userHeight && userWeight) {
       bmiInfo = calculateBMIAndAdjustWeight(userHeight, userWeight);
       finalWeight = bmiInfo.adjustedWeight;
+      
+      // Debug logging for BMI calculation
+      console.log('BMI Calculation Debug:', {
+        originalWeight: userWeight,
+        height: userHeight,
+        calculatedBMI: bmiInfo.bmi,
+        adjustedWeight: finalWeight,
+        wasAdjusted: bmiInfo.originalWeight !== bmiInfo.adjustedWeight,
+        adjustmentReason: bmiInfo.bmi && bmiInfo.bmi >= 25 ? 'BMI >= 25 (overweight)' : 'BMI normal'
+      });
+      
       if (bmiInfo.bmi !== null) {
         userDesc += `, weight ${finalWeight}, BMI ${bmiInfo.bmi}`;
       } else {
@@ -914,6 +925,11 @@ const App: React.FC = () => {
       }
     } else if (userWeight) {
       userDesc += `, weight ${userWeight}`;
+    }
+    
+    // Add headwear to user description if preserving
+    if (preserveHeadwear === true && userAnalysis?.headwearType) {
+      userDesc += `, wearing ${userAnalysis.headwearType}`;
     }
     
     // Add hair details if available
@@ -1158,6 +1174,17 @@ const App: React.FC = () => {
       if (userHeight && userWeight) {
         bmiInfo = calculateBMIAndAdjustWeight(userHeight, userWeight);
         finalWeight = bmiInfo.adjustedWeight;
+        
+        // Debug logging for BMI calculation
+        console.log('BMI Calculation Debug (Regenerate):', {
+          originalWeight: userWeight,
+          height: userHeight,
+          calculatedBMI: bmiInfo.bmi,
+          adjustedWeight: finalWeight,
+          wasAdjusted: bmiInfo.originalWeight !== bmiInfo.adjustedWeight,
+          adjustmentReason: bmiInfo.bmi && bmiInfo.bmi >= 25 ? 'BMI >= 25 (overweight)' : 'BMI normal'
+        });
+        
         if (bmiInfo.bmi !== null) {
           userDesc += `, weight ${finalWeight}, BMI ${bmiInfo.bmi}`;
         } else {
@@ -1166,6 +1193,12 @@ const App: React.FC = () => {
       } else if (userWeight) {
         userDesc += `, weight ${userWeight}`;
       }
+      
+      // Add headwear to user description if preserving
+      if (preserveHeadwear === true && userAnalysis?.headwearType) {
+        userDesc += `, wearing ${userAnalysis.headwearType}`;
+      }
+      
       if (userAnalysis.hairStyle) userDesc += `, Hair: ${userAnalysis.hairStyle}, ${userAnalysis.hairColor}, ${userAnalysis.hairLength}`;
 
       const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
