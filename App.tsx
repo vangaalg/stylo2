@@ -892,31 +892,52 @@ const App: React.FC = () => {
   };
 
   const startGenerationFlow = () => {
-    if (!userImage || !clothImage || !userAnalysis) return;
+    console.log("Generate Lookbook clicked", { userImage: !!userImage, clothImage: !!clothImage, userAnalysis: !!userAnalysis, isAuthLoading, user: !!user });
     
-    // Wait for auth loading to complete before checking user
-    if (isAuthLoading) {
-      console.log("Waiting for authentication to complete...");
+    if (!userImage || !clothImage || !userAnalysis) {
+      console.warn("Missing required data:", { userImage: !!userImage, clothImage: !!clothImage, userAnalysis: !!userAnalysis });
+      setError("⚠️ Please complete all steps: upload your photo, upload clothing, and wait for analysis to complete.");
       return;
     }
     
-    // Require Auth for Generation
+    // If auth is loading, check if we have a user
+    if (isAuthLoading) {
+      console.log("Auth is loading, checking if user exists...");
+      // If we have a user even while loading, wait for it to complete
+      if (user) {
+        console.log("User exists but auth still loading, waiting...");
+        setError("⏳ Please wait, authentication is loading...");
+        return;
+      }
+      // If no user and auth is loading, likely not authenticated - show login
+      console.log("No user found while auth loading, showing login modal");
+      setShowLoginModal(true);
+      return;
+    }
+    
+    // Require Auth for Generation (auth loading is complete)
     if (!user) {
+      console.log("User not authenticated, showing login modal");
       setShowLoginModal(true);
       return;
     }
 
     // Validate mandatory fields
     if (!userHeight || !userWeight) {
+      console.warn("Missing height or weight:", { userHeight, userWeight });
       setError("⚠️ Please fill in Height and Weight for better photo generation results.");
       return;
     }
 
     const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
     if (!user.isAdmin && user.credits < AUTO_GEN_COST) {
+      console.log("Insufficient credits:", { credits: user.credits, required: AUTO_GEN_COST });
       setShowPayment(true);
       return;
     }
+    
+    console.log("All checks passed, showing wait modal");
+    setError(null); // Clear any previous errors
     setShowWaitModal(true);
   };
 
