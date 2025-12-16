@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { User } from '../types';
 
 interface PaymentModalProps {
   onClose: () => void;
@@ -9,45 +10,61 @@ interface PaymentModalProps {
     credits: number;
     package_name: string;
   }) => void;
+  user?: User | null;
 }
 
 // REPLACE THIS WITH YOUR ACTUAL RAZORPAY KEY ID (From Razorpay Dashboard)
 // @ts-ignore
 const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID || "rzp_test_1DP5mmOlF5G5ag"; 
 
-export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }) => {
+export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, user }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState('');
-  const [selectedPackage, setSelectedPackage] = useState<'starter' | 'pro' | null>(null);
+  const [selectedPackage, setSelectedPackage] = useState<'starter' | 'pro' | 'mini' | 'single' | 'intro' | null>(null);
+
+  // Helper function to calculate photo counts
+  const getPhotoCounts = (credits: number) => {
+    const fastPhotos = credits; // 1 credit = 1 photo in fast mode
+    const qualityPhotos = Math.floor(credits / 2); // 2 credits = 1 photo in quality mode
+    return `${credits} Credits (${fastPhotos} photos fast / ${qualityPhotos} photos quality)`;
+  };
 
   const PACKAGES = {
+    intro: {
+      id: 'intro',
+      name: 'Intro Pack',
+      credits: 2,
+      price: 9,
+      description: getPhotoCounts(2),
+      oneTimeOnly: true
+    },
+    single: {
+      id: 'single',
+      name: 'Single Pack',
+      credits: 4,
+      price: 99,
+      description: getPhotoCounts(4)
+    },
+    mini: {
+      id: 'mini',
+      name: 'Trial Pack',
+      credits: 8,
+      price: 159,
+      description: getPhotoCounts(8)
+    },
     starter: {
       id: 'starter',
       name: 'Starter Pack',
       credits: 54,
       price: 999,
-      description: '54 Credits (~6-7 Complete Lookbooks)' 
+      description: getPhotoCounts(54)
     },
     pro: {
       id: 'pro',
       name: 'Pro Pack',
       credits: 102,
       price: 1500,
-      description: '102 Credits (~12-13 Complete Lookbooks)' 
-    },
-    mini: {
-      id: 'mini',
-      name: 'Trial Pack',
-      credits: 8,
-      price: 149,
-      description: '8 Credits (~1 Lookbook or 4 Auto-Gens)'
-    },
-    single: {
-      id: 'single',
-      name: 'Single Look',
-      credits: 4,
-      price: 1,
-      description: '4 Credits (~1 Auto-Gen Look)'
+      description: getPhotoCounts(102)
     }
   };
 
@@ -61,7 +78,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
     });
   };
 
-  const handlePayment = async (pkgId: 'starter' | 'pro' | 'mini' | 'single') => {
+  const handlePayment = async (pkgId: 'starter' | 'pro' | 'mini' | 'single' | 'intro') => {
+    // Check if intro pack already purchased
+    if (pkgId === 'intro' && user?.hasPurchasedIntroPack) {
+      setError('You have already purchased the Intro Pack. This is a one-time offer.');
+      return;
+    }
     setError('');
     setIsProcessing(true);
     setSelectedPackage(pkgId);
@@ -206,16 +228,54 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
           )}
 
           <div className="space-y-3 overflow-y-auto max-h-[50vh] pr-1 scrollbar-thin scrollbar-thumb-zinc-700">
-            {/* Single Photo Trial */}
+            {/* Intro Pack - One Time Only */}
+            {(!user?.hasPurchasedIntroPack) ? (
+              <div 
+                onClick={() => !isProcessing && handlePayment('intro')}
+                className={`group relative p-3 rounded-xl border-2 cursor-pointer transition-all ${selectedPackage === 'intro' ? 'border-yellow-500 bg-yellow-900/10' : 'border-zinc-800 hover:border-yellow-600 bg-zinc-900'}`}
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="bg-yellow-500/20 text-yellow-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">One-Time Only</span>
+                    <h4 className="text-base font-bold text-white mt-1">2 Credits</h4>
+                    <p className="text-zinc-400 text-[10px]">{PACKAGES.intro.description}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-white">₹9</p>
+                    {isProcessing && selectedPackage === 'intro' ? (
+                      <span className="text-[10px] text-yellow-400 animate-pulse">Processing...</span>
+                    ) : (
+                      <span className="text-[10px] text-zinc-500 group-hover:text-white transition-colors">Buy Now →</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3 rounded-xl border-2 border-zinc-800 bg-zinc-900/50 opacity-60">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <span className="bg-zinc-500/20 text-zinc-500 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Already Purchased</span>
+                    <h4 className="text-base font-bold text-zinc-500 mt-1">2 Credits</h4>
+                    <p className="text-zinc-600 text-[10px]">{PACKAGES.intro.description}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-zinc-600">₹9</p>
+                    <span className="text-[10px] text-zinc-600">✓ Purchased</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Single Pack */}
             <div 
               onClick={() => !isProcessing && handlePayment('single')}
               className={`group relative p-3 rounded-xl border-2 cursor-pointer transition-all ${selectedPackage === 'single' ? 'border-zinc-500 bg-zinc-800/50' : 'border-zinc-800 hover:border-zinc-600 bg-zinc-900'}`}
             >
               <div className="flex justify-between items-center">
                 <div>
-                  <span className="bg-zinc-500/20 text-zinc-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">One-Time</span>
+                  <span className="bg-zinc-500/20 text-zinc-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Standard</span>
                   <h4 className="text-base font-bold text-white mt-1">4 Credits</h4>
-                  <p className="text-zinc-400 text-[10px]">~1 Auto-Gen Look</p>
+                  <p className="text-zinc-400 text-[10px]">{PACKAGES.single.description}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xl font-bold text-white">₹99</p>
@@ -237,10 +297,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
                 <div>
                   <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Trial</span>
                   <h4 className="text-base font-bold text-white mt-1">8 Credits</h4>
-                  <p className="text-zinc-400 text-[10px]">~1 Lookbook</p>
+                  <p className="text-zinc-400 text-[10px]">{PACKAGES.mini.description}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-bold text-white">₹149</p>
+                  <p className="text-xl font-bold text-white">₹159</p>
                   {isProcessing && selectedPackage === 'mini' ? (
                     <span className="text-[10px] text-emerald-400 animate-pulse">Processing...</span>
                   ) : (
@@ -259,7 +319,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
                 <div>
                   <span className="bg-blue-500/20 text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Starter</span>
                   <h4 className="text-base font-bold text-white mt-1">54 Credits</h4>
-                  <p className="text-zinc-400 text-[10px]">~6-7 Lookbooks</p>
+                  <p className="text-zinc-400 text-[10px]">{PACKAGES.starter.description}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xl font-bold text-white">₹999</p>
@@ -284,7 +344,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
                 <div>
                   <span className="bg-purple-500/20 text-purple-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Pro</span>
                   <h4 className="text-base font-bold text-white mt-1">102 Credits</h4>
-                  <p className="text-zinc-400 text-[10px]">~12-13 Lookbooks</p>
+                  <p className="text-zinc-400 text-[10px]">{PACKAGES.pro.description}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-xl font-bold text-white">₹1500</p>
@@ -306,11 +366,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess }
               <div className="col-span-1 font-semibold text-zinc-500 border-b border-zinc-800 pb-1 text-center">Fast Mode</div>
               <div className="col-span-1 font-semibold text-zinc-500 border-b border-zinc-800 pb-1 text-center">Quality Mode</div>
               
-              <div className="col-span-1 py-1">Start New Lookbook (2 Photos)</div>
+              <div className="col-span-1 py-1">Start Generation (2 Photos)</div>
               <div className="col-span-1 py-1 text-center">2 Credits</div>
               <div className="col-span-1 py-1 text-center">4 Credits</div>
               
-              <div className="col-span-1 py-1 bg-zinc-800/30">Unlock / Generate 1 Photo</div>
+              <div className="col-span-1 py-1 bg-zinc-800/30">Generate 1 Photo</div>
               <div className="col-span-1 py-1 text-center bg-zinc-800/30">1 Credit</div>
               <div className="col-span-1 py-1 text-center bg-zinc-800/30">2 Credits</div>
             </div>

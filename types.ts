@@ -108,6 +108,7 @@ export interface User {
   weight?: string;
   name?: string;
   avatar?: string;
+  hasPurchasedIntroPack?: boolean;
 }
 
 // Extend Window interface for Razorpay

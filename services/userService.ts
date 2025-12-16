@@ -34,7 +34,8 @@ export const getOrCreateUserProfile = async (userId: string, email: string, sess
       height: data.height,
       weight: data.weight,
       name: metadata?.full_name,
-      avatar: metadata?.avatar_url
+      avatar: metadata?.avatar_url,
+      hasPurchasedIntroPack: data.has_purchased_intro_pack || false
     };
   }
 
@@ -65,7 +66,8 @@ export const getOrCreateUserProfile = async (userId: string, email: string, sess
       credits: newProfile.credits,
       isAdmin: newProfile.is_admin,
       name: metadata?.full_name,
-      avatar: metadata?.avatar_url
+      avatar: metadata?.avatar_url,
+      hasPurchasedIntroPack: newProfile.has_purchased_intro_pack || false
     };
   }
 
@@ -384,6 +386,26 @@ export const saveTransaction = async (
     return data;
   } catch (err) {
     console.error('Error in saveTransaction:', err);
+    throw err;
+  }
+};
+
+// Mark intro pack as purchased
+export const markIntroPackPurchased = async (userId: string) => {
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ has_purchased_intro_pack: true })
+      .eq('id', userId);
+
+    if (error) {
+      console.error('Error marking intro pack as purchased:', error);
+      throw error;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('Error in markIntroPackPurchased:', err);
     throw err;
   }
 };

@@ -22,7 +22,8 @@ import {
   updateRating,
   getFiveStarCount,
   saveTransaction,
-  getUserTransactions
+  getUserTransactions,
+  markIntroPackPurchased
 } from './services/userService';
 import { swapFaceWithReplicate } from './services/replicateService';
 import { supabase, signOut } from './services/supabaseClient'; // Added supabase and signOut
@@ -628,6 +629,19 @@ const App: React.FC = () => {
             transactionData.package_name
           );
           console.log("✅ Transaction saved successfully:", savedTx);
+          
+          // Mark intro pack as purchased if it's the intro pack
+          if (transactionData.package_name === 'Intro Pack' && user.id !== 'test-guest-id') {
+            try {
+              await markIntroPackPurchased(user.id);
+              // Update local user state
+              setUser({ ...user, hasPurchasedIntroPack: true });
+              console.log("✅ Intro pack marked as purchased");
+            } catch (introError) {
+              console.warn("⚠️ Failed to mark intro pack as purchased:", introError);
+              // Don't block the flow if this fails
+            }
+          }
           
           // Send receipt email
           try {
@@ -2057,7 +2071,8 @@ const App: React.FC = () => {
       {showPayment && (
         <PaymentModal 
           onClose={() => setShowPayment(false)} 
-          onSuccess={handlePaymentSuccess} 
+          onSuccess={handlePaymentSuccess}
+          user={user}
         />
       )}
 
