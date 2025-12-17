@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
-import { createSupportTicket, uploadSupportAttachment, getUserHistory } from '../services/userService';
+import { createSupportTicket, uploadSupportAttachment, getUserHistory, getRefundedHistoryIds } from '../services/userService';
 
 interface SupportModalProps {
   onClose: () => void;
@@ -41,9 +41,17 @@ export const SupportModal: React.FC<SupportModalProps> = ({
   useEffect(() => {
     if (user && relatedImageUrls.length === 0) {
       setIsLoadingHistory(true);
-      getUserHistory(user.id)
-        .then(history => {
-          setHistoryImages(history.map(item => ({
+      Promise.all([
+        getUserHistory(user.id),
+        getRefundedHistoryIds(user.id)
+      ])
+        .then(([history, refundedIds]) => {
+          // Filter out already refunded photos
+          const filteredHistory = history.filter(item => 
+            !item.id || !refundedIds.includes(item.id)
+          );
+          
+          setHistoryImages(filteredHistory.map(item => ({
             id: item.id || '',
             url: item.url,
             style: item.style,

@@ -525,6 +525,23 @@ export const giftCreditsToUser = async (userId: string, credits: number) => {
     .eq('id', userId);
   
   if (error) throw new Error(error.message);
+  
+  // Create notification for the user
+  try {
+    await createNotification(
+      userId,
+      'credit_gifted',
+      'Credits Gifted',
+      `You have received ${credits} credits as a gift from the admin.`,
+      undefined,
+      undefined,
+      { credits_gifted: credits }
+    );
+  } catch (notifError) {
+    // Don't fail the credit gifting if notification creation fails
+    console.error('Error creating gift notification:', notifError);
+  }
+  
   return newBalance;
 };
 
@@ -896,4 +913,37 @@ export const getUnreadNotificationCount = async (userId: string): Promise<number
   }
 
   return count || 0;
+};
+
+// Get refunded history IDs for a user (to filter out already refunded photos)
+export const getRefundedHistoryIds = async (userId: string): Promise<string[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .select('related_history_ids')
+      .eq('user_id', userId)
+      .in('status', ['resolved', 'refunded'])
+      .gt('credits_refunded', 0)
+      .not('related_history_ids', 'is', null);
+
+    if (error) {
+      console.error('Error fetching refunded history IDs:', error);
+      return [];
+    }
+
+    // Flatten the array of arrays and remove nulls
+    const refundedIds = new Set<string>();
+    data?.forEach(ticket => {
+      if (ticket.related_history_ids && Array.isArray(ticket.related_history_ids)) {
+        ticket.related_history_ids.forEach((id: string) => {
+          if (id) refundedIds.add(id);
+        });
+      }
+    });
+
+    return Array.from(refundedIds);
+  } catch (err) {
+    console.error('Error getting refunded history IDs:', err);
+    return [];
+  }
 };
