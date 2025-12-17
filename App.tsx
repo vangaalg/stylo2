@@ -153,8 +153,8 @@ const App: React.FC = () => {
         activeSubscription = null;
       }
 
-      // Only clear user on explicit sign out, not on token refresh or initialization
-      if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+      // Only clear user on explicit sign out
+      if (event === 'SIGNED_OUT') {
         setUser(null);
         sessionTokenRef.current = null;
         // Clear fields on logout
@@ -246,12 +246,9 @@ const App: React.FC = () => {
           console.error("Error in auth state change:", error);
           setUser(null);
         }
-      } else if (event !== 'TOKEN_REFRESHED' && event !== 'INITIAL_SESSION') {
-        // Only clear if it's not a token refresh or initial session check
-        // This prevents clearing during normal auth operations
-        setUser(null);
-        sessionTokenRef.current = null;
       }
+      // Note: We don't clear user for other events (TOKEN_REFRESHED, INITIAL_SESSION, etc.)
+      // as those are normal auth operations and setupAuth() handles initial session restore
       setIsAuthLoading(false);
     });
 
