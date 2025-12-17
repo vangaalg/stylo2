@@ -532,8 +532,10 @@ const App: React.FC = () => {
   useEffect(() => {
     generatedImages.forEach((img, index) => {
       if (img?.status === 'failed') {
-        // Only auto-retry if this image was actually attempted (went through generating/swapping)
-        // This prevents auto-retry on initial states or manual regenerates
+        // Only auto-retry if:
+        // 1. This image was actually attempted (went through generating/swapping)
+        // 2. No retry timer is already set
+        // This prevents auto-retry on initial states or false failures
         if (attemptedGenerationsRef.current.has(index) && !failedRetryTimersRef.current[index]) {
           failedRetryTimersRef.current[index] = setTimeout(() => {
             console.log(`Auto-retrying failed generation for ${img.style} (index ${index})`);
@@ -548,10 +550,8 @@ const App: React.FC = () => {
           clearTimeout(failedRetryTimersRef.current[index]);
           delete failedRetryTimersRef.current[index];
         }
-        // If status is generating or swapping, mark as attempted
-        if (img?.status === 'generating' || img?.status === 'swapping') {
-          attemptedGenerationsRef.current.add(index);
-        }
+        // Note: We don't mark as attempted here anymore - that's done in handleGenerate/handleRegenerate
+        // after passing initial checks. This prevents false "attempted" states.
         // If status is done or cancelled, remove from attempted set (cleanup)
         if (img?.status === 'done' || img?.status === 'cancelled') {
           attemptedGenerationsRef.current.delete(index);
@@ -1189,8 +1189,8 @@ const App: React.FC = () => {
         // Record start time for stop button
         setGenerationStartTimes(prev => ({ ...prev, [index]: Date.now() }));
         
-        // Mark as attempted and set status to generating so stop button can appear
-        attemptedGenerationsRef.current.add(index);
+        // Set status to generating FIRST (for UI) - but don't mark as attempted yet
+        // This prevents false "failed" states from triggering auto-retry
         setGeneratedImages(prev => {
           const newImages = [...prev];
           if (newImages[index]) {
@@ -1210,8 +1210,20 @@ const App: React.FC = () => {
         try {
           // Check for cancellation before starting
           if (abortController.signal.aborted || cancelledGenerations.has(index)) {
+            // Reset to pending if cancelled before attempt
+            setGeneratedImages(prev => {
+              const newImages = [...prev];
+              if (newImages[index]) {
+                newImages[index] = { ...newImages[index], status: 'pending' };
+              }
+              return newImages;
+            });
             continue;
           }
+          
+          // Only mark as attempted AFTER passing initial checks and before API call
+          // This ensures we only retry actual generation failures, not initialization errors
+          attemptedGenerationsRef.current.add(index);
           
           // 1. Gemini Step (Blocking - we wait for this to keep order and rate limits safe)
           setLoadingMessage(`Creating base style for ${style.name}...`);
@@ -1313,12 +1325,34 @@ const App: React.FC = () => {
 
         } catch (err) {
           console.error(`Failed to generate ${style.name}:`, err);
-          // Mark as failed
-          setGeneratedImages(prev => {
-             const newImages = [...prev];
-             newImages[index] = { style: style.name, url: '', status: 'failed' };
-             return newImages;
+          
+          // Only set to failed if we actually attempted generation
+          // If error happened before marking as attempted, reset to pending
+          if (attemptedGenerationsRef.current.has(index)) {
+            // Real generation failure - mark as failed
+            setGeneratedImages(prev => {
+              const newImages = [...prev];
+              newImages[index] = { style: style.name, url: '', status: 'failed' };
+              return newImages;
+            });
+          } else {
+            // Error before attempt - reset to pending to prevent false "failed" flash
+            setGeneratedImages(prev => {
+              const newImages = [...prev];
+              if (newImages[index]) {
+                newImages[index] = { ...newImages[index], status: 'pending' };
+              }
+              return newImages;
+            });
+          }
+          
+          // Clean up abort controller on error
+          setAbortControllers(prev => {
+            const updated = { ...prev };
+            delete updated[index];
+            return updated;
           });
+          
           setLoadedCount(prev => Math.max(prev, index + 1));
          }
       }
@@ -1409,8 +1443,7 @@ const App: React.FC = () => {
       // Record start time for stop button
       setGenerationStartTimes(prev => ({ ...prev, [index]: Date.now() }));
       
-      // Mark as attempted and update status to generating (so stop button can appear)
-      attemptedGenerationsRef.current.add(index);
+      // Set status to generating FIRST (for UI) - but don't mark as attempted yet
       setGeneratedImages(prev => {
         const newImages = [...prev];
         // Ensure the array is large enough
@@ -1421,15 +1454,15 @@ const App: React.FC = () => {
         }
         return newImages;
       });
-
+ 
       // Start timer for this regeneration (5 minutes = 300s)
       setImageTimers(prev => ({ ...prev, [index]: 300 }));
-
+ 
       // Build descriptions again (in case state changed, though likely same)
       let userDesc = `${userAnalysis.gender} person, ${userAnalysis.description}`;
       if (userAge) userDesc += `, age ${userAge}`;
       if (userHeight) userDesc += `, height ${userHeight}`;
-
+ 
       // Calculate BMI and adjust weight if needed
       let finalWeight = userWeight;
       let bmiInfo = null;
@@ -1462,7 +1495,7 @@ const App: React.FC = () => {
       }
       
       if (userAnalysis.hairStyle) userDesc += `, Hair: ${userAnalysis.hairStyle}, ${userAnalysis.hairColor}, ${userAnalysis.hairLength}`;
-
+ 
       const finalClothType = manualClothType || clothAnalysis?.clothingType || "clothing";
       const finalColor = manualColor || clothAnalysis?.color || "multi-colored";
       
@@ -1476,12 +1509,25 @@ const App: React.FC = () => {
       clothDesc += `, Fit: ${fitOverride}`; // Always use well-fitted fit or user preference
       if (clothAnalysis?.neckline) clothDesc += `, Neckline: ${clothAnalysis.neckline}`;
       if (clothAnalysis?.sleeveLength) clothDesc += `, Sleeves: ${clothAnalysis.sleeveLength}`;
-
+ 
       try {
         // Check for cancellation before starting
         if (abortController.signal.aborted || cancelledGenerations.has(index)) {
+          // Reset to previous status if cancelled before attempt
+          setGeneratedImages(prev => {
+            const newImages = [...prev];
+            if (newImages[index]) {
+              // Keep previous status or set to pending
+              const prevStatus = newImages[index].status === 'generating' ? 'pending' : newImages[index].status;
+              newImages[index] = { ...newImages[index], status: prevStatus || 'pending' };
+            }
+            return newImages;
+          });
           return;
         }
+        
+        // Only mark as attempted AFTER passing initial checks and before API call
+        attemptedGenerationsRef.current.add(index);
         
         // Determine prompt suffix
         let finalPromptSuffix = style.promptSuffix;
@@ -1555,11 +1601,27 @@ const App: React.FC = () => {
       } catch (err) {
         if (!abortController.signal.aborted && !cancelledGenerations.has(index)) {
           console.error(`Regeneration failed for ${styleName}:`, err);
-          setGeneratedImages(prev => {
-            const newImages = [...prev];
-            newImages[index] = { style: styleName, url: '', status: 'failed' };
-            return newImages;
-          });
+          
+          // Only set to failed if we actually attempted generation
+          if (attemptedGenerationsRef.current.has(index)) {
+            // Real generation failure - mark as failed
+            setGeneratedImages(prev => {
+              const newImages = [...prev];
+              newImages[index] = { style: styleName, url: '', status: 'failed' };
+              return newImages;
+            });
+          } else {
+            // Error before attempt - reset to previous status to prevent false "failed" flash
+            setGeneratedImages(prev => {
+              const newImages = [...prev];
+              if (newImages[index]) {
+                // Keep previous status or set to pending
+                const prevStatus = newImages[index].status === 'generating' ? 'pending' : newImages[index].status;
+                newImages[index] = { ...newImages[index], status: prevStatus || 'pending' };
+              }
+              return newImages;
+            });
+          }
           
           // Clean up abort controller on failure
           setAbortControllers(prev => {
