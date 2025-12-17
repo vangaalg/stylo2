@@ -24,7 +24,8 @@ CREATE POLICY "Admins can view all history" ON generated_history
     )
   );
 
--- Admin can view all profiles (already exists, but ensure it's there)
+-- Admin can view all profiles (add alongside existing public policy)
+-- Note: We don't drop "Public profiles are viewable by everyone" - it should remain
 DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
 CREATE POLICY "Admins can view all profiles" ON profiles
   FOR SELECT USING (
@@ -33,6 +34,5 @@ CREATE POLICY "Admins can view all profiles" ON profiles
       WHERE p.id = auth.uid() 
       AND p.is_admin = true
     )
-    OR auth.uid() = id  -- Users can still view their own profile
   );
 
