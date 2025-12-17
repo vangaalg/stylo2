@@ -1158,7 +1158,7 @@ const App: React.FC = () => {
       return;
     }
 
-    const AUTO_GEN_COST = qualityMode === 'quality' ? 40 : 20; // 2 photos * cost per photo
+    const AUTO_GEN_COST = qualityMode === 'quality' ? 20 : 10; // 1 photo * cost per photo
     if (!user.isAdmin && user.credits < AUTO_GEN_COST) {
       console.log("Insufficient credits:", { credits: user.credits, required: AUTO_GEN_COST });
       setShowPayment(true);
@@ -1240,7 +1240,7 @@ const App: React.FC = () => {
       Notification.requestPermission();
     }
 
-    const AUTO_GEN_COST = qualityMode === 'quality' ? 40 : 20; // 2 photos * cost per photo
+    const AUTO_GEN_COST = qualityMode === 'quality' ? 20 : 10; // 1 photo * cost per photo
     if (!user.isAdmin && user.credits < AUTO_GEN_COST) {
       setShowPayment(true);
       return;
@@ -1255,7 +1255,7 @@ const App: React.FC = () => {
     setGeneratedImages(Array(STYLES.length).fill(null).map((_, idx) => ({
       style: STYLES[idx].name,
       url: '',
-      status: idx < 2 ? 'pending' : 'locked' // First 2 pending, rest locked
+      status: idx < 1 ? 'pending' : 'locked' // First 1 pending, rest locked
     })));
     setLoadedCount(0);
     setCurrentProcessingIndex(0);
@@ -1333,8 +1333,8 @@ const App: React.FC = () => {
          }).catch(console.error);
       }
 
-      // Deduct credits upfront for the first 2 photos
-      const AUTO_GEN_COST = qualityMode === 'quality' ? 40 : 20; // 2 photos * cost per photo
+      // Deduct credits upfront for the first photo
+      const AUTO_GEN_COST = qualityMode === 'quality' ? 20 : 10; // 1 photo * cost per photo
       
       if (!user.isAdmin) {
          if (user.id === 'test-guest-id') {
@@ -1351,8 +1351,8 @@ const App: React.FC = () => {
       // We maintain an array of promises for Replicate tasks to ensure we don't block Gemini loop
       const replicateTasks: Promise<void>[] = [];
 
-      // Only generate the first 2 styles automatically
-      for (let index = 0; index < 2; index++) {
+      // Only generate the first style automatically
+      for (let index = 0; index < 1; index++) {
         const style = STYLES[index];
         
         // Skip if already cancelled
@@ -2230,7 +2230,7 @@ const App: React.FC = () => {
         >
           <span>Generate Lookbook</span>
           {!user?.isAdmin && (
-             <span className="bg-black/20 text-xs px-2 py-1 rounded-full">Cost: {qualityMode === 'quality' ? '40' : '20'} Credits</span>
+             <span className="bg-black/20 text-xs px-2 py-1 rounded-full">Cost: {qualityMode === 'quality' ? '20' : '10'} Credits</span>
           )}
         </button>
         </div>
@@ -2726,13 +2726,13 @@ const App: React.FC = () => {
           </div>
           )})}
           
-          {/* Loading Placeholders (Only for the first 2 if generating) */}
-          {isStillGenerating && Array.from({ length: 2 - loadedCount }).map((_, idx) => {
-             // Only show placeholders if we haven't loaded the first 2 yet
-             if (loadedCount >= 2) return null;
+          {/* Loading Placeholders (Only for the first 1 if generating) */}
+          {isStillGenerating && Array.from({ length: 1 - loadedCount }).map((_, idx) => {
+             // Only show placeholders if we haven't loaded the first 1 yet
+             if (loadedCount >= 1) return null;
              
              const actualIndex = loadedCount + idx;
-             if (actualIndex >= 2) return null; // Just in case
+             if (actualIndex >= 1) return null; // Just in case
 
              const isCurrent = actualIndex === currentProcessingIndex;
              const styleName = STYLES[actualIndex]?.name;
