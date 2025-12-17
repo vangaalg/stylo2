@@ -2738,7 +2738,11 @@ const App: React.FC = () => {
           </div>
           
           <div className="absolute bottom-6 left-6 right-6">
-            {user ? (
+            {isAuthLoading ? (
+              <div className="bg-zinc-800 p-4 rounded-xl text-center">
+                <div className="w-6 h-6 border-2 border-zinc-700 border-t-indigo-500 rounded-full animate-spin mx-auto"></div>
+              </div>
+            ) : user ? (
               <div className="bg-zinc-800 p-4 rounded-xl">
                 <p className="text-xs text-zinc-400 mb-2">Credits Balance</p>
                 <p className="text-xl font-bold text-white">{user.credits}</p>
@@ -3077,7 +3081,10 @@ const App: React.FC = () => {
 
           <div className="flex items-center gap-4">
              {/* Auth & Credit Display */}
-             {user ? (
+             {isAuthLoading ? (
+               // Show loading spinner while auth is initializing
+               <div className="w-8 h-8 border-2 border-zinc-700 border-t-indigo-500 rounded-full animate-spin"></div>
+             ) : user ? (
                <>
                  <div className="bg-zinc-900 rounded-full px-4 py-1.5 border border-zinc-800 flex items-center gap-2 cursor-pointer hover:bg-zinc-800 transition" onClick={() => setShowHistory(true)}>
                     {user.avatar ? (
