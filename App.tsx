@@ -1158,7 +1158,7 @@ const App: React.FC = () => {
       return;
     }
 
-    const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
+    const AUTO_GEN_COST = qualityMode === 'quality' ? 40 : 20; // 2 photos * cost per photo
     if (!user.isAdmin && user.credits < AUTO_GEN_COST) {
       console.log("Insufficient credits:", { credits: user.credits, required: AUTO_GEN_COST });
       setShowPayment(true);
@@ -1240,7 +1240,7 @@ const App: React.FC = () => {
       Notification.requestPermission();
     }
 
-    const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
+    const AUTO_GEN_COST = qualityMode === 'quality' ? 40 : 20; // 2 photos * cost per photo
     if (!user.isAdmin && user.credits < AUTO_GEN_COST) {
       setShowPayment(true);
       return;
@@ -1334,7 +1334,7 @@ const App: React.FC = () => {
       }
 
       // Deduct credits upfront for the first 2 photos
-      const AUTO_GEN_COST = qualityMode === 'quality' ? 4 : 2; // 2 photos * cost per photo
+      const AUTO_GEN_COST = qualityMode === 'quality' ? 40 : 20; // 2 photos * cost per photo
       
       if (!user.isAdmin) {
          if (user.id === 'test-guest-id') {
@@ -1599,8 +1599,8 @@ const App: React.FC = () => {
       return;
     }
     
-    // 2. We'll assume 1 credit for Fast, 2 for Quality (as discussed in plan, though not strictly enforced yet in code, let's add basic check)
-    const cost = qualityMode === 'quality' ? 2 : 1;
+    // 2. We'll assume 10 credits for Fast, 20 for Quality (as discussed in plan, though not strictly enforced yet in code, let's add basic check)
+    const cost = qualityMode === 'quality' ? 20 : 10;
     
     const style = STYLES[index];
     const styleName = style.name;
@@ -2198,7 +2198,7 @@ const App: React.FC = () => {
       </div>
 
       <div className="pt-6 border-t border-zinc-800 space-y-3">
-        {(user && !user.isAdmin && user.credits < 3) && (
+        {(user && !user.isAdmin && user.credits < 30) && (
             <div className="text-center text-yellow-500 text-sm mb-2">
                 ⚠️ Insufficient credits. Please top up.
             </div>
@@ -2230,7 +2230,7 @@ const App: React.FC = () => {
         >
           <span>Generate Lookbook</span>
           {!user?.isAdmin && (
-             <span className="bg-black/20 text-xs px-2 py-1 rounded-full">Cost: 3 Credits</span>
+             <span className="bg-black/20 text-xs px-2 py-1 rounded-full">Cost: {qualityMode === 'quality' ? '40' : '20'} Credits</span>
           )}
         </button>
         </div>

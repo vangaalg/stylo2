@@ -24,8 +24,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
 
   // Helper function to calculate photo counts
   const getPhotoCounts = (credits: number) => {
-    const fastPhotos = credits; // 1 credit = 1 photo in fast mode
-    const qualityPhotos = Math.floor(credits / 2); // 2 credits = 1 photo in quality mode
+    const fastPhotos = Math.floor(credits / 10); // 10 credits = 1 photo in fast mode
+    const qualityPhotos = Math.floor(credits / 20); // 20 credits = 1 photo in quality mode
     return `${credits} Credits (${fastPhotos} photos fast / ${qualityPhotos} photos quality)`;
   };
 
@@ -33,38 +33,38 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
     intro: {
       id: 'intro',
       name: 'Intro Pack',
-      credits: 2,
+      credits: 20,
       price: 9,
-      description: getPhotoCounts(2),
+      description: getPhotoCounts(20),
       oneTimeOnly: true
     },
     single: {
       id: 'single',
       name: 'Single Pack',
-      credits: 4,
+      credits: 40,
       price: 99,
-      description: getPhotoCounts(4)
+      description: getPhotoCounts(40)
     },
     mini: {
       id: 'mini',
       name: 'Trial Pack',
-      credits: 8,
+      credits: 80,
       price: 159,
-      description: getPhotoCounts(8)
+      description: getPhotoCounts(80)
     },
     starter: {
       id: 'starter',
       name: 'Starter Pack',
-      credits: 54,
+      credits: 540,
       price: 999,
-      description: getPhotoCounts(54)
+      description: getPhotoCounts(540)
     },
     pro: {
       id: 'pro',
       name: 'Pro Pack',
-      credits: 102,
+      credits: 1020,
       price: 1500,
-      description: getPhotoCounts(102)
+      description: getPhotoCounts(1020)
     }
   };
 
@@ -250,7 +250,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
                 <div className="flex justify-between items-center">
                   <div>
                     <span className="bg-yellow-500/20 text-yellow-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">One-Time Only</span>
-                    <h4 className="text-base font-bold text-white mt-1">2 Credits</h4>
+                    <h4 className="text-base font-bold text-white mt-1">20 Credits</h4>
                     <p className="text-zinc-400 text-[10px]">{PACKAGES.intro.description}</p>
                   </div>
                   <div className="text-right">
@@ -268,7 +268,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
                 <div className="flex justify-between items-center">
                   <div>
                     <span className="bg-zinc-500/20 text-zinc-500 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Already Purchased</span>
-                    <h4 className="text-base font-bold text-zinc-500 mt-1">2 Credits</h4>
+                    <h4 className="text-base font-bold text-zinc-500 mt-1">20 Credits</h4>
                     <p className="text-zinc-600 text-[10px]">{PACKAGES.intro.description}</p>
                   </div>
                   <div className="text-right">
@@ -287,7 +287,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
               <div className="flex justify-between items-center">
                 <div>
                   <span className="bg-zinc-500/20 text-zinc-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Standard</span>
-                  <h4 className="text-base font-bold text-white mt-1">4 Credits</h4>
+                  <h4 className="text-base font-bold text-white mt-1">40 Credits</h4>
                   <p className="text-zinc-400 text-[10px]">{PACKAGES.single.description}</p>
                 </div>
                 <div className="text-right">
@@ -309,7 +309,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
               <div className="flex justify-between items-center">
                 <div>
                   <span className="bg-emerald-500/20 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Trial</span>
-                  <h4 className="text-base font-bold text-white mt-1">8 Credits</h4>
+                  <h4 className="text-base font-bold text-white mt-1">80 Credits</h4>
                   <p className="text-zinc-400 text-[10px]">{PACKAGES.mini.description}</p>
                 </div>
                 <div className="text-right">
@@ -331,7 +331,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
               <div className="flex justify-between items-center">
                 <div>
                   <span className="bg-blue-500/20 text-blue-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Starter</span>
-                  <h4 className="text-base font-bold text-white mt-1">54 Credits</h4>
+                  <h4 className="text-base font-bold text-white mt-1">540 Credits</h4>
                   <p className="text-zinc-400 text-[10px]">{PACKAGES.starter.description}</p>
                 </div>
                 <div className="text-right">
@@ -356,7 +356,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
               <div className="flex justify-between items-center">
                 <div>
                   <span className="bg-purple-500/20 text-purple-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">Pro</span>
-                  <h4 className="text-base font-bold text-white mt-1">102 Credits</h4>
+                  <h4 className="text-base font-bold text-white mt-1">1020 Credits</h4>
                   <p className="text-zinc-400 text-[10px]">{PACKAGES.pro.description}</p>
                 </div>
                 <div className="text-right">
@@ -380,12 +380,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ onClose, onSuccess, 
               <div className="col-span-1 font-semibold text-zinc-500 border-b border-zinc-800 pb-1 text-center">Quality Mode</div>
               
               <div className="col-span-1 py-1">Start Generation (2 Photos)</div>
-              <div className="col-span-1 py-1 text-center">2 Credits</div>
-              <div className="col-span-1 py-1 text-center">4 Credits</div>
+              <div className="col-span-1 py-1 text-center">20 Credits</div>
+              <div className="col-span-1 py-1 text-center">40 Credits</div>
               
               <div className="col-span-1 py-1 bg-zinc-800/30">Generate 1 Photo</div>
-              <div className="col-span-1 py-1 text-center bg-zinc-800/30">1 Credit</div>
-              <div className="col-span-1 py-1 text-center bg-zinc-800/30">2 Credits</div>
+              <div className="col-span-1 py-1 text-center bg-zinc-800/30">10 Credits</div>
+              <div className="col-span-1 py-1 text-center bg-zinc-800/30">20 Credits</div>
             </div>
           </div>
           

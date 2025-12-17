@@ -47,7 +47,7 @@ export const getOrCreateUserProfile = async (userId: string, email: string, sess
         { 
           id: userId, 
           email: email,
-          credits: 3, 
+          credits: 30, 
           is_admin: shouldBeAdmin,
           last_session_id: sessionId
         }

@@ -168,8 +168,8 @@ export const SupportModal: React.FC<SupportModalProps> = ({
           )
         : Array.from(selectedHistoryIds); // Use history IDs when no related images
       
-      // Calculate credits used for selected images only (1 credit per image in fast mode, 2 in quality mode)
-      const costPerImage = qualityMode === 'quality' ? 2 : 1;
+      // Calculate credits used for selected images only (10 credits per image in fast mode, 20 in quality mode)
+      const costPerImage = qualityMode === 'quality' ? 20 : 10;
       const selectedCreditsUsed = selectedImages.size * costPerImage;
 
       // Create ticket with only selected images
@@ -295,7 +295,7 @@ export const SupportModal: React.FC<SupportModalProps> = ({
                     </p>
                     <p className="text-xs text-indigo-400">
                       {selectedImages.size} of {relatedImageUrls.length > 0 ? relatedImageUrls.length : historyImages.length} selected
-                      {selectedImages.size > 0 && ` • Credits: ${selectedImages.size * (qualityMode === 'quality' ? 2 : 1)}`}
+                      {selectedImages.size > 0 && ` • Credits: ${selectedImages.size * (qualityMode === 'quality' ? 20 : 10)}`}
                     </p>
                   </div>
                   <div className="flex gap-2">
