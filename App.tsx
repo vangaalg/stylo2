@@ -1634,6 +1634,13 @@ const App: React.FC = () => {
          }
       }
       
+      // Clear cancelled state when restarting
+      setCancelledGenerations(prev => {
+        const updated = new Set(prev);
+        updated.delete(index);
+        return updated;
+      });
+      
       // Create AbortController for this regeneration
       const abortController = new AbortController();
       setAbortControllers(prev => ({ ...prev, [index]: abortController }));
@@ -2355,18 +2362,19 @@ const App: React.FC = () => {
              const img = generatedImages[idx];
              const isGenerated = !!img;
              
-             // Status flags
-             const isSwapping = img?.status === 'swapping';
-             const isRegenerating = img?.status === 'regenerating';
-             const isFailed = img?.status === 'failed';
-             const isDoneWithError = img?.status === 'done_with_error';
-             const isDone = img?.status === 'done';
-             const isLocked = img?.status === 'locked';
-             const isPending = img?.status === 'pending'; // Added pending check
-             
-             // Show regenerate button if failed, done with error, or even if done (user option)
-             // But prominently for failures
-             const showRegenerate = isFailed || isDoneWithError || isDone;
+            // Status flags
+            const isSwapping = img?.status === 'swapping';
+            const isRegenerating = img?.status === 'regenerating';
+            const isFailed = img?.status === 'failed';
+            const isDoneWithError = img?.status === 'done_with_error';
+            const isDone = img?.status === 'done';
+            const isCancelled = img?.status === 'cancelled';
+            const isLocked = img?.status === 'locked';
+            const isPending = img?.status === 'pending'; // Added pending check
+            
+            // Show regenerate button if failed, done with error, cancelled, or even if done (user option)
+            // But prominently for failures and cancelled
+            const showRegenerate = isFailed || isDoneWithError || isDone || isCancelled;
              
              // Timer for this image
              const timer = imageTimers[idx] || 0;
@@ -2533,6 +2541,29 @@ const App: React.FC = () => {
                                 {isPending ? 'Waiting...' : 'Generating...'}
                               </p>
                             </div>
+                         ) : isCancelled ? (
+                            // Show cancelled state with clear message and restart button
+                            <div className="flex flex-col items-center justify-center p-6 text-center">
+                              <div className="w-16 h-16 rounded-full bg-orange-500/20 flex items-center justify-center mb-4">
+                                <svg className="w-8 h-8 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                              </div>
+                              <h3 className="text-white font-bold text-sm mb-2">Generation Stopped</h3>
+                              <p className="text-xs text-zinc-400 mb-4">You stopped the generation for this photo.</p>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRegenerate(idx);
+                                }}
+                                className="bg-indigo-600 text-white px-4 py-2 rounded-full text-xs font-bold hover:bg-indigo-500 transition shadow-lg flex items-center gap-2"
+                              >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Restart Generation
+                              </button>
+                            </div>
                          ) : (
                             <div className="flex flex-col items-center text-red-400">
                               <svg className="w-12 h-12 mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2588,8 +2619,12 @@ const App: React.FC = () => {
                         e.stopPropagation();
                         handleRegenerate(idx);
                       }}
-                      className={`p-2 rounded-full shadow-lg transition-all ${isFailed ? 'bg-indigo-600 text-white hover:bg-indigo-500 animate-pulse' : 'bg-black/50 text-white hover:bg-black/80 backdrop-blur-md'}`}
-                      title="Regenerate"
+                      className={`p-2 rounded-full shadow-lg transition-all ${
+                        isFailed || isCancelled 
+                          ? 'bg-indigo-600 text-white hover:bg-indigo-500 animate-pulse' 
+                          : 'bg-black/50 text-white hover:bg-black/80 backdrop-blur-md'
+                      }`}
+                      title={isCancelled ? "Restart Generation" : "Regenerate"}
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -2599,8 +2634,8 @@ const App: React.FC = () => {
             </div>
               )}
               
-              {/* Explicit Regenerate Button for Failed State */}
-              {isFailed && !isRegenerating && (
+              {/* Explicit Regenerate/Restart Button for Failed or Cancelled State */}
+              {(isFailed || isCancelled) && !isRegenerating && (
                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <button 
                       onClick={(e) => {
@@ -2612,7 +2647,7 @@ const App: React.FC = () => {
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                       </svg>
-                      Regenerate
+                      {isCancelled ? 'Restart Generation' : 'Regenerate'}
                     </button>
           </div>
               )}
