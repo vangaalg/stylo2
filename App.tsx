@@ -2882,7 +2882,7 @@ const App: React.FC = () => {
               </div>
             ) : (
               <div className="bg-zinc-800 p-4 rounded-xl text-center">
-                <p className="text-sm text-zinc-300 mb-3">Sign in to save your styles and get 3 free credits!</p>
+                <p className="text-sm text-zinc-300 mb-3">Sign in to save your styles and get 30 free credits!</p>
                 <button onClick={() => {setShowLoginModal(true); setIsSidebarOpen(false);}} className="w-full bg-white text-black text-xs font-bold py-2 rounded-lg hover:bg-zinc-200">Sign In</button>
               </div>
             )}
