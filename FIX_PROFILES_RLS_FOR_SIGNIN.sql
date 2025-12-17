@@ -46,13 +46,19 @@ BEGIN
 END $$;
 
 -- Add admin policy (in addition to public policy, not replacing it)
+-- Note: We use a function to avoid recursive RLS issues
+-- First, create a security definer function that bypasses RLS to check admin status
+CREATE OR REPLACE FUNCTION is_user_admin(check_user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT COALESCE((SELECT is_admin FROM profiles WHERE id = check_user_id), false);
+$$;
+
+-- Now create the admin policy using this function
 DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
 CREATE POLICY "Admins can view all profiles" ON profiles
-  FOR SELECT USING (
-    EXISTS (
-      SELECT 1 FROM profiles p
-      WHERE p.id = auth.uid() 
-      AND p.is_admin = true
-    )
-  );
+  FOR SELECT USING (is_user_admin(auth.uid()));
 
