@@ -1660,6 +1660,13 @@ const App: React.FC = () => {
     // Update local state
     setRatings(prev => ({ ...prev, [imageUrl]: rating }));
     
+    // Clear hover state when rating is submitted
+    setHoveredStar(prev => {
+      const updated = { ...prev };
+      delete updated[imageUrl];
+      return updated;
+    });
+    
     // Fire confetti for 5 stars
     if (rating === 5) {
       const duration = 3 * 1000;
@@ -2410,13 +2417,13 @@ const App: React.FC = () => {
               )}
             
             {/* Interactive Feedback System */}
-            {isDone && img?.url && (
+            {isDone && img?.url && !ratingSubmitted[img.url] && (
               <div 
                 className={`mt-3 w-full max-w-[200px] mx-auto
                            bg-zinc-900/50 backdrop-blur-sm border border-zinc-800/50 rounded-xl p-3 
-                           transition-all duration-500 
+                           transition-all duration-700 ease-in-out
                            ${ratings[img.url] ? 'bg-indigo-900/10 border-indigo-500/20' : 'hover:bg-zinc-800/80 hover:border-zinc-700'}
-                           ${ratingSubmitted[img.url] ? 'opacity-0 pointer-events-none transform scale-95' : 'opacity-100 transform scale-100'}
+                           ${ratingSubmitted[img.url] ? 'opacity-0 pointer-events-none transform scale-95 translate-y-2' : 'opacity-100 transform scale-100 translate-y-0'}
                            flex flex-col items-center justify-center gap-2`}
                 onClick={(e) => e.stopPropagation()}
               >
@@ -2439,8 +2446,8 @@ const App: React.FC = () => {
                   {[1, 2, 3, 4, 5].map((star) => {
                     const currentRating = ratings[img.url] || 0;
                     const hoveredRating = hoveredStar[img.url] || 0;
-                    const isFilled = currentRating >= star || (!currentRating && hoveredRating >= star);
-                    const isHovered = hoveredRating >= star && !currentRating;
+                    const isFilled = currentRating >= star;
+                    const isHovered = !currentRating && hoveredRating >= star;
                     
                     return (
                       <button
@@ -2453,6 +2460,7 @@ const App: React.FC = () => {
                           return updated;
                         })}
                         className="group/star focus:outline-none transition-all duration-200 hover:scale-125 active:scale-95"
+                        disabled={!!currentRating}
                       >
                         <svg 
                           className={`w-6 h-6 drop-shadow-sm transition-all duration-200 ${
@@ -2460,7 +2468,7 @@ const App: React.FC = () => {
                               ? 'text-yellow-400 fill-yellow-400 scale-110' 
                               : isHovered
                               ? 'text-yellow-300 fill-yellow-300/40 stroke-yellow-300 scale-110'
-                              : 'text-zinc-600 fill-zinc-800/50 stroke-zinc-500 hover:stroke-yellow-400 hover:fill-yellow-400/20'
+                              : 'text-zinc-600 fill-zinc-800/50 stroke-zinc-500 group-hover/star:text-yellow-400 group-hover/star:fill-yellow-400/20 group-hover/star:stroke-yellow-400'
                           }`}
                           viewBox="0 0 24 24" 
                           strokeWidth={1.5}
