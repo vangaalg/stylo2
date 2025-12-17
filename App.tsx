@@ -1209,7 +1209,24 @@ const App: React.FC = () => {
   };
 
   const handleGenerate = async (backgroundMode: boolean = false) => {
-    if (!userImage || !clothImage || !userAnalysis || !user) return;
+    console.log("handleGenerate called", { backgroundMode, userImage: !!userImage, clothImage: !!clothImage, userAnalysis: !!userAnalysis, user: !!user });
+    
+    if (!userImage || !clothImage || !userAnalysis || !user) {
+      console.warn("handleGenerate: Missing required data", { 
+        userImage: !!userImage, 
+        clothImage: !!clothImage, 
+        userAnalysis: !!userAnalysis, 
+        user: !!user 
+      });
+      return;
+    }
+    
+    // Check if auth is still loading
+    if (isAuthLoading) {
+      console.log("handleGenerate: Auth still loading, waiting...");
+      setError("⏳ Please wait, authentication is loading...");
+      return;
+    }
 
     // Clear cancelled generations and start times for new generation
     setCancelledGenerations(new Set());
@@ -1554,11 +1571,29 @@ const App: React.FC = () => {
   };
 
   const handleRegenerate = async (index: number) => {
-    if (!userImage || !clothImage || !userAnalysis || index < 0 || index >= STYLES.length) return;
+    console.log("handleRegenerate called for index:", index);
+    
+    if (!userImage || !clothImage || !userAnalysis || index < 0 || index >= STYLES.length) {
+      console.warn("handleRegenerate: Missing required data", { 
+        userImage: !!userImage, 
+        clothImage: !!clothImage, 
+        userAnalysis: !!userAnalysis, 
+        index 
+      });
+      return;
+    }
 
     // Require Auth
     if (!user) {
+      console.log("handleRegenerate: No user, showing login modal");
       setShowLoginModal(true);
+      return;
+    }
+    
+    // Check if auth is still loading
+    if (isAuthLoading) {
+      console.log("handleRegenerate: Auth still loading, waiting...");
+      setError("⏳ Please wait, authentication is loading...");
       return;
     }
     
@@ -1568,7 +1603,7 @@ const App: React.FC = () => {
     const style = STYLES[index];
     const styleName = style.name;
 
-    requireAuth(async () => {
+    try {
       // Check for custom creation prompt
       if (styleName === "Custom Creation" && !customPromptText.trim()) {
         alert("Please enter a description for your custom style.");
@@ -1578,6 +1613,7 @@ const App: React.FC = () => {
       // If it's a regeneration (already done/failed) OR an unlock (undefined status)
       // We should check credits.
       if (user && !user.isAdmin && user.credits < cost) {
+          console.log("handleRegenerate: Insufficient credits", { credits: user.credits, required: cost });
           setShowPayment(true);
           return;
       }
@@ -1593,6 +1629,7 @@ const App: React.FC = () => {
            }
          } catch (e) {
            console.error("Credit deduction failed", e);
+           setError("Failed to deduct credits. Please try again.");
            return;
          }
       }
@@ -1792,7 +1829,10 @@ const App: React.FC = () => {
           });
         }
       }
-    });
+    } catch (err) {
+      console.error("handleRegenerate: Unexpected error", err);
+      setError("An unexpected error occurred. Please try again.");
+    }
   };
 
   const handleReset = () => {
