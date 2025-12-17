@@ -497,7 +497,7 @@ export const findUserByEmail = async (email: string) => {
 export const getAllUsers = async (limit: number = 200) => {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, email, credits, is_admin, created_at')
+    .select('id, email, credits, is_admin, created_at, age, height, weight, last_session_id')
     .order('created_at', { ascending: false })
     .limit(limit);
   
@@ -1024,6 +1024,273 @@ export const getHistoryIdsInTickets = async (userId: string): Promise<string[]> 
   } catch (err) {
     console.error('Error getting history IDs in tickets:', err);
     return [];
+  }
+};
+
+// --- Admin: Get comprehensive user statistics ---
+
+// Get detailed user statistics (admin only)
+export interface UserDetailedStats {
+  profile: {
+    id: string;
+    email: string;
+    credits: number;
+    is_admin: boolean;
+    age?: string;
+    height?: string;
+    weight?: string;
+    created_at: string;
+    last_session_id?: string;
+  };
+  credits: {
+    current: number;
+    total_earned: number; // From transactions
+    total_spent: number; // Estimated from history
+    net: number;
+  };
+  activity: {
+    account_age_days: number;
+    last_activity?: string;
+    photos_generated: number;
+    transactions_count: number;
+    support_tickets_count: number;
+  };
+  time_spent: {
+    account_created: string;
+    days_since_creation: number;
+    last_active?: string;
+  };
+}
+
+export const getUserDetailedStats = async (userId: string): Promise<UserDetailedStats | null> => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      throw new Error('Unauthorized');
+    }
+
+    // Check if user is admin
+    const { data: adminProfile } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', session.user.id)
+      .single();
+
+    if (!adminProfile?.is_admin) {
+      throw new Error('Admin access required');
+    }
+
+    // Get user profile
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (profileError || !profile) {
+      console.error('Error fetching profile:', profileError);
+      return null;
+    }
+
+    // Get transactions
+    const { data: transactions } = await supabase
+      .from('transactions')
+      .select('credits_added, created_at')
+      .eq('user_id', userId)
+      .eq('status', 'completed');
+
+    // Get history count
+    const { count: historyCount } = await supabase
+      .from('generated_history')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    // Get last history item for last activity
+    const { data: lastHistory } = await supabase
+      .from('generated_history')
+      .select('created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    // Get support tickets count
+    const { count: ticketsCount } = await supabase
+      .from('support_tickets')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId);
+
+    // Calculate stats
+    const totalEarned = transactions?.reduce((sum, tx) => sum + (tx.credits_added || 0), 0) || 0;
+    const totalSpent = (historyCount || 0) * 10; // Assuming average 10 credits per photo (fast mode)
+    const accountCreated = new Date(profile.created_at);
+    const now = new Date();
+    const daysSinceCreation = Math.floor((now.getTime() - accountCreated.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Get last activity (max of last transaction or last history)
+    const { data: lastTransaction } = await supabase
+      .from('transactions')
+      .select('created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    const lastActivity = lastHistory?.created_at || lastTransaction?.created_at;
+
+    return {
+      profile: {
+        id: profile.id,
+        email: profile.email || '',
+        credits: profile.credits || 0,
+        is_admin: profile.is_admin || false,
+        age: profile.age,
+        height: profile.height,
+        weight: profile.weight,
+        created_at: profile.created_at,
+        last_session_id: profile.last_session_id
+      },
+      credits: {
+        current: profile.credits || 0,
+        total_earned: totalEarned,
+        total_spent: totalSpent,
+        net: totalEarned - totalSpent
+      },
+      activity: {
+        account_age_days: daysSinceCreation,
+        last_activity: lastActivity,
+        photos_generated: historyCount || 0,
+        transactions_count: transactions?.length || 0,
+        support_tickets_count: ticketsCount || 0
+      },
+      time_spent: {
+        account_created: profile.created_at,
+        days_since_creation: daysSinceCreation,
+        last_active: lastActivity
+      }
+    };
+  } catch (err: any) {
+    console.error('Error getting user detailed stats:', err);
+    throw err;
+  }
+};
+
+// Get user transactions for admin (all transactions)
+export const getUserTransactionsForAdmin = async (userId: string) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      throw new Error('Unauthorized');
+    }
+
+    // Check if user is admin
+    const { data: adminProfile } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', session.user.id)
+      .single();
+
+    if (!adminProfile?.is_admin) {
+      throw new Error('Admin access required');
+    }
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return data.map(tx => ({
+      id: tx.id,
+      payment_id: tx.razorpay_payment_id,
+      order_id: tx.razorpay_order_id,
+      amount: tx.amount / 100, // Convert from paise to rupees
+      currency: tx.currency,
+      credits: tx.credits_added,
+      package_name: tx.package_name,
+      status: tx.status,
+      date: tx.created_at
+    }));
+  } catch (err: any) {
+    console.error('Error fetching user transactions for admin:', err);
+    throw err;
+  }
+};
+
+// Get user history for admin (all history)
+export const getUserHistoryForAdmin = async (userId: string, limit: number = 50) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      throw new Error('Unauthorized');
+    }
+
+    // Check if user is admin
+    const { data: adminProfile } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', session.user.id)
+      .single();
+
+    if (!adminProfile?.is_admin) {
+      throw new Error('Admin access required');
+    }
+
+    const { data, error } = await supabase
+      .from('generated_history')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+
+    return data.map(item => ({
+      id: item.id,
+      url: item.image_url,
+      style: item.style,
+      date: item.created_at,
+      email: item.user_email || '',
+      rating: item.rating || 0
+    }));
+  } catch (err: any) {
+    console.error('Error fetching user history for admin:', err);
+    throw err;
+  }
+};
+
+// Get user support tickets for admin
+export const getUserSupportTicketsForAdmin = async (userId: string) => {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      throw new Error('Unauthorized');
+    }
+
+    // Check if user is admin
+    const { data: adminProfile } = await supabase
+      .from('profiles')
+      .select('is_admin')
+      .eq('id', session.user.id)
+      .single();
+
+    if (!adminProfile?.is_admin) {
+      throw new Error('Admin access required');
+    }
+
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (err: any) {
+    console.error('Error fetching user support tickets for admin:', err);
+    throw err;
   }
 };
 
