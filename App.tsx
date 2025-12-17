@@ -2454,7 +2454,7 @@ const App: React.FC = () => {
                                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-3 py-2 rounded-lg text-xs font-bold hover:from-indigo-500 hover:to-purple-500 transition shadow-lg flex items-center justify-center gap-1"
                              >
                                <span>Enhance & Generate</span>
-                               <span className="bg-black/20 px-1.5 rounded text-[9px]">{qualityMode === 'quality' ? '2' : '1'} Cr</span>
+                               <span className="bg-black/20 px-1.5 rounded text-[9px]">{qualityMode === 'quality' ? '20' : '10'} Cr</span>
                              </button>
                          </div>
                        ) : (
@@ -2474,7 +2474,7 @@ const App: React.FC = () => {
                              className="bg-white text-black px-4 py-2 rounded-full text-xs font-bold hover:bg-indigo-500 hover:text-white transition shadow-lg flex items-center gap-1"
                            >
                              <span>Generate</span>
-                             <span className="bg-black/10 px-1.5 rounded text-[10px]">{qualityMode === 'quality' ? '2' : '1'} Cr</span>
+                             <span className="bg-black/10 px-1.5 rounded text-[10px]">{qualityMode === 'quality' ? '20' : '10'} Cr</span>
                            </button>
                          </>
                        )}
