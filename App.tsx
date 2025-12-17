@@ -143,6 +143,7 @@ const App: React.FC = () => {
       
       // Mark setupAuth as completed - now onAuthStateChange can process events
       setupAuthCompletedRef.current = true;
+      setIsAuthLoading(false); // Mark auth as complete - user can now interact with the app
       
       // Log session status for debugging
       if (!initialSession) {
