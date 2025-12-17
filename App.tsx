@@ -1477,7 +1477,9 @@ const App: React.FC = () => {
                  });
 
                  // Save to history
-                 addToHistory({ url: finalImage, style: style.name });
+                 if (user) {
+                   addToHistory({ url: finalImage, style: style.name });
+                 }
                }
             } catch (swapError) {
                if (!abortController.signal.aborted && !cancelledGenerations.has(index)) {
@@ -2678,7 +2680,14 @@ const App: React.FC = () => {
                    </p>
                 )}
 
-                <div className="flex gap-1.5">
+                <div 
+                  className="flex gap-1.5"
+                  onMouseLeave={() => setHoveredStar(prev => {
+                    const updated = { ...prev };
+                    delete updated[img.url];
+                    return updated;
+                  })}
+                >
                   {[1, 2, 3, 4, 5].map((star) => {
                     const currentRating = ratings[img.url] || 0;
                     const hoveredRating = hoveredStar[img.url] || 0;
@@ -2690,11 +2699,6 @@ const App: React.FC = () => {
                         key={star}
                         onClick={() => handleRating(idx, star, img.url)}
                         onMouseEnter={() => setHoveredStar(prev => ({ ...prev, [img.url]: star }))}
-                        onMouseLeave={() => setHoveredStar(prev => {
-                          const updated = { ...prev };
-                          delete updated[img.url];
-                          return updated;
-                        })}
                         className="group/star focus:outline-none transition-all duration-200 hover:scale-125 active:scale-95"
                         disabled={!!currentRating}
                       >
