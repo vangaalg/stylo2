@@ -528,7 +528,7 @@ export const giftCreditsToUser = async (userId: string, credits: number) => {
   
   // Create notification for the user
   try {
-    await createNotification(
+    const notification = await createNotification(
       userId,
       'credit_gifted',
       'Credits Gifted',
@@ -537,9 +537,16 @@ export const giftCreditsToUser = async (userId: string, credits: number) => {
       undefined,
       { credits_gifted: credits }
     );
-  } catch (notifError) {
+    console.log('Gift notification created successfully:', notification);
+  } catch (notifError: any) {
     // Don't fail the credit gifting if notification creation fails
-    console.error('Error creating gift notification:', notifError);
+    console.error('Error creating gift notification:', {
+      error: notifError,
+      message: notifError?.message,
+      code: notifError?.code,
+      details: notifError?.details,
+      hint: notifError?.hint
+    });
   }
   
   return newBalance;
@@ -547,7 +554,7 @@ export const giftCreditsToUser = async (userId: string, credits: number) => {
 
 // --- Support Tickets ---
 
-// Create a support ticket
+// Create a support ticket with retry logic for race conditions
 export const createSupportTicket = async (
   userId: string,
   subject: string,
@@ -557,34 +564,62 @@ export const createSupportTicket = async (
   attachmentUrls: string[] = [],
   relatedHistoryIds: string[] = [] // Array of generated_history IDs
 ) => {
-  try {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user || session.user.id !== userId) {
-      throw new Error('Unauthorized');
-    }
-
-    const { data, error } = await supabase
-      .from('support_tickets')
-      .insert({
-        user_id: userId,
-        ticket_number: null, // Explicitly null to trigger auto-generation by database trigger
-        subject,
-        description,
-        related_image_urls: relatedImageUrls,
-        related_history_ids: relatedHistoryIds.length > 0 ? relatedHistoryIds : null,
-        credits_used: creditsUsed,
-        attachment_urls: attachmentUrls,
-        generation_date: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  } catch (err: any) {
-    console.error('Error creating support ticket:', err);
-    throw err;
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user || session.user.id !== userId) {
+    throw new Error('Unauthorized');
   }
+
+  // Retry logic for handling race conditions
+  const maxRetries = 3;
+  let lastError: any = null;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Add small random delay to reduce collision probability
+      if (attempt > 0) {
+        await new Promise(resolve => setTimeout(resolve, 100 * attempt + Math.random() * 100));
+      }
+
+      const { data, error } = await supabase
+        .from('support_tickets')
+        .insert({
+          user_id: userId,
+          ticket_number: null, // Explicitly null to trigger auto-generation by database trigger
+          subject,
+          description,
+          related_image_urls: relatedImageUrls,
+          related_history_ids: relatedHistoryIds.length > 0 ? relatedHistoryIds : null,
+          credits_used: creditsUsed,
+          attachment_urls: attachmentUrls,
+          generation_date: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (error) {
+        // If it's a duplicate key error and we have retries left, try again
+        if (error.code === '23505' && error.message?.includes('ticket_number') && attempt < maxRetries - 1) {
+          console.warn(`Ticket number collision detected, retrying... (attempt ${attempt + 1}/${maxRetries})`);
+          lastError = error;
+          continue;
+        }
+        throw error;
+      }
+
+      return data;
+    } catch (err: any) {
+      lastError = err;
+      // If it's not a duplicate key error or we're out of retries, throw immediately
+      if (err.code !== '23505' || !err.message?.includes('ticket_number') || attempt === maxRetries - 1) {
+        console.error('Error creating support ticket:', err);
+        throw err;
+      }
+    }
+  }
+
+  // If we get here, all retries failed
+  console.error('Failed to create support ticket after retries:', lastError);
+  throw lastError;
 };
 
 // Get user's support tickets
@@ -827,6 +862,12 @@ export const createNotification = async (
   metadata?: any
 ) => {
   try {
+    // Get session to ensure we have proper auth context
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+      console.warn('No session when creating notification, proceeding anyway (may fail due to RLS)');
+    }
+
     const { data, error } = await supabase
       .from('notifications')
       .insert({
@@ -841,10 +882,31 @@ export const createNotification = async (
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Notification insert error:', {
+        error,
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        userId,
+        type
+      });
+      throw error;
+    }
+    
+    console.log('Notification created successfully:', { id: data?.id, type, userId });
     return data;
   } catch (err: any) {
-    console.error('Error creating notification:', err);
+    console.error('Error creating notification:', {
+      error: err,
+      message: err?.message,
+      code: err?.code,
+      details: err?.details,
+      hint: err?.hint,
+      userId,
+      type
+    });
     throw err;
   }
 };
