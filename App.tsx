@@ -80,8 +80,11 @@ const App: React.FC = () => {
           
           setUser(profile);
 
-          // Fetch History
-          getUserHistory(initialSession.user.id).then(items => setHistory(items));
+          // Fetch History and restore generated images
+          getUserHistory(initialSession.user.id).then(items => {
+            setHistory(items);
+            restoreGeneratedImagesFromHistory(items);
+          });
           
           // 1. Try to restore redirect state
           const savedState = sessionStorage.getItem('styleGenie_redirect_state');
@@ -150,6 +153,18 @@ const App: React.FC = () => {
         activeSubscription = null;
       }
 
+      // Only clear user on explicit sign out, not on token refresh or initialization
+      if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
+        setUser(null);
+        sessionTokenRef.current = null;
+        // Clear fields on logout
+        setUserAge('');
+        setUserHeight('');
+        setUserWeight('');
+        setIsAuthLoading(false);
+        return;
+      }
+
       if (session?.user) {
         try {
           const token = session.access_token;
@@ -174,8 +189,11 @@ const App: React.FC = () => {
              window.history.replaceState(null, '', window.location.pathname + window.location.search);
           }
 
-          // Fetch History
-          getUserHistory(session.user.id).then(items => setHistory(items));
+          // Fetch History and restore generated images
+          getUserHistory(session.user.id).then(items => {
+            setHistory(items);
+            restoreGeneratedImagesFromHistory(items);
+          });
           
           // Restore redirect state if pending (and not handled by setupAuth)
           const savedState = sessionStorage.getItem('styleGenie_redirect_state');
@@ -228,14 +246,11 @@ const App: React.FC = () => {
           console.error("Error in auth state change:", error);
           setUser(null);
         }
-      } else {
-        // User signed out
+      } else if (event !== 'TOKEN_REFRESHED' && event !== 'INITIAL_SESSION') {
+        // Only clear if it's not a token refresh or initial session check
+        // This prevents clearing during normal auth operations
         setUser(null);
         sessionTokenRef.current = null;
-        // Clear fields on logout
-        setUserAge('');
-        setUserHeight('');
-        setUserWeight('');
       }
       setIsAuthLoading(false);
     });
@@ -454,13 +469,19 @@ const App: React.FC = () => {
         const remoteHistory = await getUserHistory(user.id);
         if (remoteHistory && remoteHistory.length > 0) {
           setHistory(remoteHistory);
+          restoreGeneratedImagesFromHistory(remoteHistory);
         } else {
           // Fallback to local storage if no remote history (or offline)
           const savedHistory = localStorage.getItem('styleGenieHistory');
           if (savedHistory) {
             try {
-              setHistory(JSON.parse(savedHistory));
+              const parsed = JSON.parse(savedHistory);
+              setHistory(parsed);
+              restoreGeneratedImagesFromHistory(parsed);
             } catch (e) { console.error(e); }
+          } else {
+            // No history at all, set all to locked
+            restoreGeneratedImagesFromHistory([]);
           }
         }
       }
@@ -624,6 +645,58 @@ const App: React.FC = () => {
         const updated = [tempItem, ...current].slice(0, 5);
         localStorage.setItem('styleGenieHistory', JSON.stringify(updated));
       }
+    }
+  };
+
+  // Restore generated images grid from history
+  const restoreGeneratedImagesFromHistory = (historyItems: any[]) => {
+    if (!historyItems || historyItems.length === 0) {
+      // No history, set all to locked
+      setGeneratedImages(STYLES.map(style => ({
+        style: style.name,
+        url: '',
+        status: 'locked'
+      })));
+      return;
+    }
+    
+    // Create a map of style name to most recent image URL
+    const styleMap = new Map<string, string>();
+    
+    historyItems.forEach(item => {
+      // Only update if we haven't seen this style yet (history is ordered newest first)
+      if (!styleMap.has(item.style)) {
+        styleMap.set(item.style, item.url);
+      }
+    });
+    
+    // Build generatedImages array by matching history to STYLES
+    const restoredImages: {style: string, url: string, status?: string}[] = [];
+    
+    STYLES.forEach((style, index) => {
+      const imageUrl = styleMap.get(style.name);
+      if (imageUrl) {
+        // Image was previously generated - restore it as 'done'
+        restoredImages[index] = {
+          style: style.name,
+          url: imageUrl,
+          status: 'done'
+        };
+      } else {
+        // Image not generated yet - keep as locked
+        restoredImages[index] = {
+          style: style.name,
+          url: '',
+          status: 'locked'
+        };
+      }
+    });
+    
+    setGeneratedImages(restoredImages);
+    
+    // If we have any generated images, set step to results (if user has uploaded images)
+    if (restoredImages.some(img => img.status === 'done') && userImage && clothImage) {
+      setStep(AppStep.RESULTS);
     }
   };
 
@@ -2305,7 +2378,7 @@ const App: React.FC = () => {
                        </>
                      ) : (
                        <div className="flex items-center justify-center h-full bg-zinc-900 relative">
-                         {isRegenerating || isPending ? (
+                         {isRegenerating || isPending || isGenerating ? (
                             <div className="text-center">
                               {showTimer ? (
                                 <div className="relative w-24 h-24 mx-auto mb-4 flex items-center justify-center">
