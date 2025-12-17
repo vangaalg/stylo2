@@ -1054,6 +1054,7 @@ export interface UserDetailedStats {
     photos_generated: number;
     transactions_count: number;
     support_tickets_count: number;
+    five_star_ratings_count: number;
   };
   time_spent: {
     account_created: string;
@@ -1120,6 +1121,13 @@ export const getUserDetailedStats = async (userId: string): Promise<UserDetailed
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId);
 
+    // Get 5-star ratings count
+    const { count: fiveStarCount } = await supabase
+      .from('generated_history')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('rating', 5);
+
     // Calculate stats
     const totalEarned = transactions?.reduce((sum, tx) => sum + (tx.credits_added || 0), 0) || 0;
     const totalSpent = (historyCount || 0) * 10; // Assuming average 10 credits per photo (fast mode)
@@ -1161,7 +1169,8 @@ export const getUserDetailedStats = async (userId: string): Promise<UserDetailed
         last_activity: lastActivity,
         photos_generated: historyCount || 0,
         transactions_count: transactions?.length || 0,
-        support_tickets_count: ticketsCount || 0
+        support_tickets_count: ticketsCount || 0,
+        five_star_ratings_count: fiveStarCount || 0
       },
       time_spent: {
         account_created: profile.created_at,

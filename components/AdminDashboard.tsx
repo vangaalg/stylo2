@@ -824,6 +824,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
                         <label className="text-xs text-zinc-500">Support Tickets</label>
                         <p className="text-white font-semibold">{userDetails.activity.support_tickets_count}</p>
                       </div>
+                      <div>
+                        <label className="text-xs text-zinc-500">5-Star Ratings Given</label>
+                        <p className="text-yellow-400 font-semibold flex items-center gap-1">
+                          ⭐ {userDetails.activity.five_star_ratings_count}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
