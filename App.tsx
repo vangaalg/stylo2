@@ -47,6 +47,7 @@ const App: React.FC = () => {
   const [showSupportModal, setShowSupportModal] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const sessionTokenRef = useRef<string | null>(null);
+  const setupAuthCompletedRef = useRef(false);
 
   // Listen for Auth Changes
   useEffect(() => {
@@ -59,6 +60,7 @@ const App: React.FC = () => {
       if (sessionError) {
         console.error("Session error:", sessionError);
         setIsAuthLoading(false);
+        setupAuthCompletedRef.current = true; // Mark as completed even on error
         return;
       }
 
@@ -75,6 +77,7 @@ const App: React.FC = () => {
           if (!profile) {
             console.error("Failed to get/create user profile");
             setIsAuthLoading(false);
+            setupAuthCompletedRef.current = true; // Mark as completed even if profile failed
             return;
           }
           
@@ -119,19 +122,26 @@ const App: React.FC = () => {
           activeSubscription = subscribeToSessionChanges(initialSession.user.id);
         } catch (error) {
           console.error("Error setting up auth:", error);
+          setIsAuthLoading(false);
+          // Mark as completed even on error so onAuthStateChange can process events
+          setupAuthCompletedRef.current = true;
+          return;
         }
+      } else {
+        // No session found - this is normal for logged out users
+        setIsAuthLoading(false);
       }
       
       // If we have a hash that looks like a redirect, keep loading state true
       // and let onAuthStateChange handle the finalization to avoid flicker/race conditions
       if (!initialSession && window.location.hash && window.location.hash.includes('access_token')) {
         console.log("Detected auth redirect hash, waiting for auth event...");
+        // Don't mark as completed yet - wait for redirect to complete
         return; 
       }
       
-      // Only set loading to false after session check is complete
-      // This ensures user state is properly set before allowing interactions
-      setIsAuthLoading(false);
+      // Mark setupAuth as completed - now onAuthStateChange can process events
+      setupAuthCompletedRef.current = true;
       
       // Log session status for debugging
       if (!initialSession) {
