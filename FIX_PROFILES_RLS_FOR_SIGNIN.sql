@@ -2,18 +2,48 @@
 -- Fix profiles RLS to ensure sign-in still works
 -- This ensures the original "Public profiles are viewable by everyone" policy exists
 
--- Ensure the public policy exists (don't drop it, just create if missing)
+-- Ensure the public policy exists (create if missing, don't drop if exists)
 -- This allows profile lookups during sign-in
-CREATE POLICY IF NOT EXISTS "Public profiles are viewable by everyone." ON profiles
-  FOR SELECT USING (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' 
+    AND tablename = 'profiles' 
+    AND policyname = 'Public profiles are viewable by everyone.'
+  ) THEN
+    CREATE POLICY "Public profiles are viewable by everyone." ON profiles
+      FOR SELECT USING (true);
+  END IF;
+END $$;
 
 -- Ensure users can insert their own profile (for sign-up)
-CREATE POLICY IF NOT EXISTS "Users can insert their own profile." ON profiles
-  FOR INSERT WITH CHECK (auth.uid() = id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' 
+    AND tablename = 'profiles' 
+    AND policyname = 'Users can insert their own profile.'
+  ) THEN
+    CREATE POLICY "Users can insert their own profile." ON profiles
+      FOR INSERT WITH CHECK (auth.uid() = id);
+  END IF;
+END $$;
 
 -- Ensure users can update their own profile
-CREATE POLICY IF NOT EXISTS "Users can update own profile." ON profiles
-  FOR UPDATE USING (auth.uid() = id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies 
+    WHERE schemaname = 'public' 
+    AND tablename = 'profiles' 
+    AND policyname = 'Users can update own profile.'
+  ) THEN
+    CREATE POLICY "Users can update own profile." ON profiles
+      FOR UPDATE USING (auth.uid() = id);
+  END IF;
+END $$;
 
 -- Add admin policy (in addition to public policy, not replacing it)
 DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
