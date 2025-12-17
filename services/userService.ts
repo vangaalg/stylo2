@@ -993,7 +993,42 @@ export const getUnreadNotificationCount = async (userId: string): Promise<number
   return count || 0;
 };
 
+// Get history IDs that are already in ANY support ticket (to prevent duplicate complaints)
+// This ensures each photo can only be in one ticket at a time
+export const getHistoryIdsInTickets = async (userId: string): Promise<string[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('support_tickets')
+      .select('related_history_ids')
+      .eq('user_id', userId)
+      .not('related_history_ids', 'is', null);
+      // No status filter - check ALL tickets (pending, in_review, resolved, refunded)
+      // This prevents the same photo from being in multiple tickets
+
+    if (error) {
+      console.error('Error fetching history IDs in tickets:', error);
+      return [];
+    }
+
+    // Flatten the array of arrays and remove nulls
+    const historyIdsInTickets = new Set<string>();
+    data?.forEach(ticket => {
+      if (ticket.related_history_ids && Array.isArray(ticket.related_history_ids)) {
+        ticket.related_history_ids.forEach((id: string) => {
+          if (id) historyIdsInTickets.add(id);
+        });
+      }
+    });
+
+    return Array.from(historyIdsInTickets);
+  } catch (err) {
+    console.error('Error getting history IDs in tickets:', err);
+    return [];
+  }
+};
+
 // Get refunded history IDs for a user (to filter out already refunded photos)
+// Kept for backward compatibility if needed elsewhere
 export const getRefundedHistoryIds = async (userId: string): Promise<string[]> => {
   try {
     const { data, error } = await supabase
