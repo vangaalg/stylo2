@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { createSupportTicket, uploadSupportAttachment } from '../services/userService';
 
@@ -8,6 +8,7 @@ interface SupportModalProps {
   relatedImageUrls?: string[]; // Images from the lookbook
   creditsUsed?: number; // Credits used for generation
   relatedHistoryIds?: string[]; // IDs from generated_history table
+  qualityMode?: 'fast' | 'quality'; // Quality mode for credit calculation
 }
 
 export const SupportModal: React.FC<SupportModalProps> = ({ 
@@ -15,7 +16,8 @@ export const SupportModal: React.FC<SupportModalProps> = ({
   user, 
   relatedImageUrls = [],
   creditsUsed = 0,
-  relatedHistoryIds = []
+  relatedHistoryIds = [],
+  qualityMode = 'fast'
 }) => {
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
@@ -24,6 +26,18 @@ export const SupportModal: React.FC<SupportModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [ticketNumber, setTicketNumber] = useState<string | null>(null);
+  
+  // Track selected images - default to all images selected
+  const [selectedImages, setSelectedImages] = useState<Set<string>>(
+    new Set(relatedImageUrls)
+  );
+
+  // Update selected images when relatedImageUrls changes
+  useEffect(() => {
+    if (relatedImageUrls.length > 0) {
+      setSelectedImages(new Set(relatedImageUrls));
+    }
+  }, [relatedImageUrls]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -36,6 +50,26 @@ export const SupportModal: React.FC<SupportModalProps> = ({
     setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
+  const toggleImageSelection = (imageUrl: string) => {
+    setSelectedImages(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(imageUrl)) {
+        newSet.delete(imageUrl);
+      } else {
+        newSet.add(imageUrl);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllImages = () => {
+    setSelectedImages(new Set(relatedImageUrls));
+  };
+
+  const deselectAllImages = () => {
+    setSelectedImages(new Set());
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
@@ -45,6 +79,11 @@ export const SupportModal: React.FC<SupportModalProps> = ({
 
     if (!subject.trim() || !description.trim()) {
       setError('Please fill in all required fields');
+      return;
+    }
+
+    if (selectedImages.size === 0) {
+      setError('Please select at least one image to include in your complaint');
       return;
     }
 
@@ -66,15 +105,25 @@ export const SupportModal: React.FC<SupportModalProps> = ({
         }
       }
 
-      // Create ticket
+      // Get selected image URLs and their corresponding history IDs
+      const selectedImageUrls = Array.from(selectedImages);
+      const selectedHistoryIds = relatedHistoryIds.filter((_, idx) => 
+        selectedImages.has(relatedImageUrls[idx])
+      );
+      
+      // Calculate credits used for selected images only (1 credit per image in fast mode, 2 in quality mode)
+      const costPerImage = qualityMode === 'quality' ? 2 : 1;
+      const selectedCreditsUsed = selectedImages.size * costPerImage;
+
+      // Create ticket with only selected images
       const ticket = await createSupportTicket(
         user.id,
         subject,
         description,
-        relatedImageUrls,
-        creditsUsed,
+        selectedImageUrls,
+        selectedCreditsUsed,
         attachmentUrls,
-        relatedHistoryIds
+        selectedHistoryIds
       );
 
       setSuccess(true);
@@ -179,17 +228,83 @@ export const SupportModal: React.FC<SupportModalProps> = ({
               />
             </div>
 
-            {/* Related Images Info */}
+            {/* Select Images to Include */}
             {relatedImageUrls.length > 0 && (
               <div className="bg-indigo-900/20 border border-indigo-500/30 rounded-lg p-4">
-                <p className="text-sm text-indigo-300 mb-2">
-                  Related Generation: {relatedImageUrls.length} image(s) from your lookbook
-                </p>
-                {creditsUsed > 0 && (
-                  <p className="text-xs text-indigo-400">
-                    Credits used: {creditsUsed}
-                  </p>
-                )}
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="text-sm font-semibold text-indigo-300 mb-1">
+                      Select Photos for Complaint
+                    </p>
+                    <p className="text-xs text-indigo-400">
+                      {selectedImages.size} of {relatedImageUrls.length} selected
+                      {selectedImages.size > 0 && ` • Credits: ${selectedImages.size * (qualityMode === 'quality' ? 2 : 1)}`}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={selectAllImages}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 underline"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-indigo-600">|</span>
+                    <button
+                      type="button"
+                      onClick={deselectAllImages}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 underline"
+                    >
+                      Deselect All
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Image Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3 max-h-64 overflow-y-auto">
+                  {relatedImageUrls.map((imageUrl, idx) => {
+                    const isSelected = selectedImages.has(imageUrl);
+                    return (
+                      <div
+                        key={idx}
+                        className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all group ${
+                          isSelected
+                            ? 'border-indigo-500 ring-2 ring-indigo-500/50 scale-105'
+                            : 'border-zinc-700 hover:border-zinc-600 hover:scale-105'
+                        }`}
+                        onClick={() => toggleImageSelection(imageUrl)}
+                      >
+                        <img
+                          src={imageUrl}
+                          alt={`Generated photo ${idx + 1}`}
+                          className="w-full h-28 sm:h-32 object-cover"
+                        />
+                        {/* Checkbox overlay */}
+                        <div className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all shadow-lg ${
+                          isSelected
+                            ? 'bg-indigo-500'
+                            : 'bg-zinc-800/90 group-hover:bg-zinc-700'
+                        }`}>
+                          {isSelected ? (
+                            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <div className="w-3 h-3 rounded-full border-2 border-zinc-400" />
+                          )}
+                        </div>
+                        {/* Dark overlay when not selected */}
+                        {!isSelected && (
+                          <div className="absolute inset-0 bg-black/30 group-hover:bg-black/20 transition-all" />
+                        )}
+                        {/* Image number badge */}
+                        <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded">
+                          #{idx + 1}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 

@@ -3083,6 +3083,7 @@ const App: React.FC = () => {
             const costPerImage = qualityMode === 'quality' ? 2 : 1;
             return generatedImages.filter(img => img?.url).length * costPerImage;
           })()}
+          qualityMode={qualityMode}
         />
       )}
     </div>
