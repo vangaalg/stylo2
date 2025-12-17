@@ -330,6 +330,7 @@ export const getUserHistory = async (userId: string) => {
   }
   
   return data.map(item => ({
+    id: item.id, // Include history ID for linking to support tickets
     url: item.image_url,
     style: item.style,
     date: item.created_at,
@@ -549,6 +550,7 @@ export const createSupportTicket = async (
       .from('support_tickets')
       .insert({
         user_id: userId,
+        ticket_number: null, // Explicitly null to trigger auto-generation by database trigger
         subject,
         description,
         related_image_urls: relatedImageUrls,
