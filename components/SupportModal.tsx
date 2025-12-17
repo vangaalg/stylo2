@@ -7,13 +7,15 @@ interface SupportModalProps {
   user: User | null;
   relatedImageUrls?: string[]; // Images from the lookbook
   creditsUsed?: number; // Credits used for generation
+  relatedHistoryIds?: string[]; // IDs from generated_history table
 }
 
 export const SupportModal: React.FC<SupportModalProps> = ({ 
   onClose, 
   user, 
   relatedImageUrls = [],
-  creditsUsed = 0 
+  creditsUsed = 0,
+  relatedHistoryIds = []
 }) => {
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
@@ -71,7 +73,8 @@ export const SupportModal: React.FC<SupportModalProps> = ({
         description,
         relatedImageUrls,
         creditsUsed,
-        attachmentUrls
+        attachmentUrls,
+        relatedHistoryIds
       );
 
       setSuccess(true);

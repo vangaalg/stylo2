@@ -303,11 +303,15 @@ export const saveHistoryItem = async (userId: string, imageUrl: string, style: s
           '5. Access token exists?': !!session.access_token
         });
       }
+      return null;
     } else {
       console.log('[History] Successfully saved:', data);
+      // Return the first item's ID (should only be one)
+      return data && data.length > 0 ? data[0].id : null;
     }
   } catch (err: any) {
     console.error('[History] Unexpected error:', err);
+    return null;
   }
 };
 
@@ -532,7 +536,8 @@ export const createSupportTicket = async (
   description: string,
   relatedImageUrls: string[],
   creditsUsed: number,
-  attachmentUrls: string[] = []
+  attachmentUrls: string[] = [],
+  relatedHistoryIds: string[] = [] // Array of generated_history IDs
 ) => {
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -547,6 +552,7 @@ export const createSupportTicket = async (
         subject,
         description,
         related_image_urls: relatedImageUrls,
+        related_history_ids: relatedHistoryIds.length > 0 ? relatedHistoryIds : null,
         credits_used: creditsUsed,
         attachment_urls: attachmentUrls,
         generation_date: new Date().toISOString()
@@ -603,16 +609,32 @@ export const getAllSupportTickets = async () => {
       throw new Error('Admin access required');
     }
 
-    const { data, error } = await supabase
+    // Fetch tickets without join first
+    const { data: tickets, error } = await supabase
       .from('support_tickets')
-      .select(`
-        *,
-        user:profiles!support_tickets_user_id_fkey(email, credits)
-      `)
+      .select('*')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    return data;
+
+    // Manually fetch user emails from profiles
+    if (tickets && tickets.length > 0) {
+      const userIds = [...new Set(tickets.map(t => t.user_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, email, credits')
+        .in('id', userIds);
+
+      // Map profiles to tickets
+      const profileMap = new Map(profiles?.map(p => [p.id, p]) || []);
+      
+      return tickets.map(ticket => ({
+        ...ticket,
+        user: profileMap.get(ticket.user_id) || { email: 'N/A', credits: 0 }
+      }));
+    }
+
+    return tickets || [];
   } catch (err: any) {
     console.error('Error fetching all support tickets:', err);
     throw err;

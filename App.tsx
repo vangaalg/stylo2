@@ -429,6 +429,7 @@ const App: React.FC = () => {
   const wakeLockRef = useRef<any>(null);
   const failedRetryTimersRef = useRef<Record<number, NodeJS.Timeout>>({});
   const attemptedGenerationsRef = useRef<Set<number>>(new Set()); // Track which images have been attempted
+  const imageUrlToHistoryIdRef = useRef<Map<string, string>>(new Map()); // Map image URLs to history IDs
 
   // Timers for individual images
   const [imageTimers, setImageTimers] = useState<{[key: number]: number}>({});
@@ -599,7 +600,16 @@ const App: React.FC = () => {
         
         if (publicUrl) {
           // Save metadata to DB (with user email and date/time)
-          await saveHistoryItem(user.id, publicUrl, newImage.style, user.email);
+          const historyId = await saveHistoryItem(user.id, publicUrl, newImage.style, user.email);
+          
+          // Store history ID mapping
+          if (historyId) {
+            imageUrlToHistoryIdRef.current.set(publicUrl, historyId);
+            // Also map the original URL if different
+            if (newImage.url !== publicUrl) {
+              imageUrlToHistoryIdRef.current.set(newImage.url, historyId);
+            }
+          }
           
           // Update state with permanent URL
           setHistory(prev => prev.map(item => 
@@ -1580,6 +1590,7 @@ const App: React.FC = () => {
     setTotalTimeTaken(null);
     generationStartTimeRef.current = null;
     setImageTimers({});
+    imageUrlToHistoryIdRef.current.clear(); // Clear history ID mappings
   };
 
   // Handle Rating
@@ -2991,6 +3002,11 @@ const App: React.FC = () => {
           relatedImageUrls={generatedImages
             .filter(img => img?.url)
             .map(img => img.url!)
+          }
+          relatedHistoryIds={generatedImages
+            .filter(img => img?.url)
+            .map(img => imageUrlToHistoryIdRef.current.get(img.url!) || '')
+            .filter(id => id !== '') // Remove empty IDs
           }
           creditsUsed={(() => {
             // Calculate total credits used for all generated images
