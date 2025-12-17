@@ -868,6 +868,17 @@ export const createNotification = async (
       console.warn('No session when creating notification, proceeding anyway (may fail due to RLS)');
     }
 
+    // Check if current user is admin (for better error messages)
+    let isAdmin = false;
+    if (session?.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', session.user.id)
+        .single();
+      isAdmin = profile?.is_admin || false;
+    }
+
     const { data, error } = await supabase
       .from('notifications')
       .insert({
@@ -890,12 +901,17 @@ export const createNotification = async (
         details: error.details,
         hint: error.hint,
         userId,
-        type
+        type,
+        currentUserId: session?.user?.id,
+        isAdmin,
+        rlsHint: isAdmin 
+          ? 'Admin should be able to create notifications. Check RLS policy "Users and admins can create notifications".'
+          : 'User can only create notifications for themselves. Check RLS policy.'
       });
       throw error;
     }
     
-    console.log('Notification created successfully:', { id: data?.id, type, userId });
+    console.log('Notification created successfully:', { id: data?.id, type, userId, createdBy: session?.user?.id });
     return data;
   } catch (err: any) {
     console.error('Error creating notification:', {
