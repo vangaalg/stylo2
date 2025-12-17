@@ -498,6 +498,7 @@ const App: React.FC = () => {
 
   // 5-Star Stats
   const [fiveStarCount, setFiveStarCount] = useState<number>(0);
+  const [showAnimatedCount, setShowAnimatedCount] = useState<number | null>(null); // For animated count display
 
   // Load 5-star count on mount
   useEffect(() => {
@@ -1902,6 +1903,18 @@ const App: React.FC = () => {
     // Save to backend
     if (user && imageUrl) {
       await updateRating(imageUrl, rating);
+      
+      // If 5-star rating, fetch updated count and show animation
+      if (rating === 5) {
+        const newCount = await getFiveStarCount();
+        setFiveStarCount(newCount);
+        setShowAnimatedCount(newCount);
+        
+        // Hide after 3 seconds
+        setTimeout(() => {
+          setShowAnimatedCount(null);
+        }, 3000);
+      }
     }
     
     // Fade out the rating window after showing the thank you message briefly
@@ -1915,8 +1928,10 @@ const App: React.FC = () => {
   const renderUploadUser = () => (
     <div className="space-y-6 text-center animate-fade-in">
       {fiveStarCount > 0 && (
-        <div className="inline-flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-4 py-1.5 mb-2">
-          <span className="text-yellow-500 text-xs font-bold">⭐ {fiveStarCount.toLocaleString()} 5-Star Styles Generated</span>
+        <div className="inline-flex items-center gap-3 bg-yellow-500/10 border border-yellow-500/20 rounded-full px-6 py-2.5 mb-4 shadow-lg shadow-yellow-500/10">
+          <span className="text-yellow-400 text-lg font-bold">⭐</span>
+          <span className="text-yellow-400 text-base font-bold">{fiveStarCount.toLocaleString()}</span>
+          <span className="text-yellow-500 text-sm font-semibold">5-Star Ratings Received</span>
         </div>
       )}
       <div className="bg-zinc-800/50 p-8 rounded-2xl border-2 border-dashed border-zinc-700 hover:border-indigo-500 transition-colors">
@@ -3373,6 +3388,20 @@ const App: React.FC = () => {
           user={user}
           onClose={() => setShowSupportSection(false)}
         />
+      )}
+
+      {/* Animated 5-Star Count Display (Subway Surfer style) */}
+      {showAnimatedCount !== null && (
+        <div className="fixed inset-0 z-[200] pointer-events-none flex items-center justify-center">
+          <div className="animate-count-popup text-center">
+            <div className="text-8xl md:text-9xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-yellow-500 to-yellow-600 drop-shadow-2xl">
+              {showAnimatedCount.toLocaleString()}
+            </div>
+            <div className="text-2xl md:text-3xl font-bold text-yellow-400 mt-2 drop-shadow-lg">
+              ⭐ 5-Star Ratings
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
