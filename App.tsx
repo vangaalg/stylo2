@@ -5,6 +5,8 @@ import { PaymentModal } from './components/PaymentModal';
 import { LoginModal } from './components/LoginModal'; // Added LoginModal
 import { AdminDashboard } from './components/AdminDashboard';
 import { SupportModal } from './components/SupportModal';
+import { NotificationCenter } from './components/NotificationCenter';
+import { SupportSection } from './components/SupportSection';
 import { 
   analyzeUserFace, 
   analyzeClothItem, 
@@ -24,7 +26,8 @@ import {
   getFiveStarCount,
   saveTransaction,
   getUserTransactions,
-  markIntroPackPurchased
+  markIntroPackPurchased,
+  getUnreadNotificationCount
 } from './services/userService';
 import { swapFaceWithReplicate } from './services/replicateService';
 import { supabase, signOut } from './services/supabaseClient'; // Added supabase and signOut
@@ -45,6 +48,9 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null); // Default to null (Guest)
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showSupportModal, setShowSupportModal] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showSupportSection, setShowSupportSection] = useState(false);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const sessionTokenRef = useRef<string | null>(null);
   const setupAuthCompletedRef = useRef(false);
@@ -523,6 +529,52 @@ const App: React.FC = () => {
       }
     };
     loadHistory();
+  }, [user?.id]);
+
+  // Load unread notification count and set up real-time subscription
+  useEffect(() => {
+    if (!user?.id) {
+      setUnreadNotificationCount(0);
+      return;
+    }
+
+    const loadUnreadCount = async () => {
+      try {
+        const count = await getUnreadNotificationCount(user.id);
+        setUnreadNotificationCount(count);
+      } catch (err) {
+        console.error('Error loading unread notification count:', err);
+      }
+    };
+
+    loadUnreadCount();
+
+    // Set up real-time subscription for new notifications
+    const channel = supabase
+      .channel(`notifications-${user.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${user.id}`
+      }, () => {
+        // Refresh unread count when new notification is created
+        loadUnreadCount();
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${user.id}`
+      }, () => {
+        // Refresh unread count when notification is updated (marked as read)
+        loadUnreadCount();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user?.id]);
 
   // Load transactions when modal opens
@@ -3087,6 +3139,33 @@ const App: React.FC = () => {
                <div className="w-8 h-8 border-2 border-zinc-700 border-t-indigo-500 rounded-full animate-spin"></div>
              ) : user ? (
                <>
+                 {/* Notification Bell */}
+                 <button
+                   onClick={() => setShowNotifications(true)}
+                   className="relative p-2 text-zinc-400 hover:text-white transition"
+                   title="Notifications"
+                 >
+                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                   </svg>
+                   {unreadNotificationCount > 0 && (
+                     <span className="absolute top-0 right-0 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                       {unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}
+                     </span>
+                   )}
+                 </button>
+
+                 {/* Support Button */}
+                 <button
+                   onClick={() => setShowSupportSection(true)}
+                   className="p-2 text-zinc-400 hover:text-white transition"
+                   title="Support"
+                 >
+                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+                   </svg>
+                 </button>
+
                  <div className="bg-zinc-900 rounded-full px-4 py-1.5 border border-zinc-800 flex items-center gap-2 cursor-pointer hover:bg-zinc-800 transition" onClick={() => setShowHistory(true)}>
                     {user.avatar ? (
                       <img src={user.avatar} alt="User" className="w-6 h-6 rounded-full object-cover border border-zinc-700" />
@@ -3200,6 +3279,20 @@ const App: React.FC = () => {
             return generatedImages.filter(img => img?.url).length * costPerImage;
           })()}
           qualityMode={qualityMode}
+        />
+      )}
+
+      {showNotifications && user && (
+        <NotificationCenter
+          user={user}
+          onClose={() => setShowNotifications(false)}
+        />
+      )}
+
+      {showSupportSection && user && (
+        <SupportSection
+          user={user}
+          onClose={() => setShowSupportSection(false)}
         />
       )}
     </div>
