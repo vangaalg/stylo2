@@ -147,6 +147,14 @@ const App: React.FC = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log("Auth state change:", event, session?.user?.email);
       
+      // Skip INITIAL_SESSION - setupAuth() already handles initial session restoration
+      // This prevents race conditions where onAuthStateChange might clear the user
+      // that setupAuth() just set
+      if (event === 'INITIAL_SESSION') {
+        console.log("Skipping INITIAL_SESSION - handled by setupAuth()");
+        return;
+      }
+      
       // Cleanup old subscription if user changed
       if (activeSubscription) {
         supabase.removeChannel(activeSubscription);
