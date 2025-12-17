@@ -82,6 +82,7 @@ const App: React.FC = () => {
           }
           
           setUser(profile);
+          console.log("✅ User set in setupAuth:", profile.email, "ID:", profile.id);
 
           // Fetch History and restore generated images
           getUserHistory(initialSession.user.id).then(items => {
@@ -165,6 +166,20 @@ const App: React.FC = () => {
         return;
       }
       
+      // Skip SIGNED_IN if setupAuth hasn't completed yet (prevents race condition on page refresh)
+      // Also skip if user is already set and it's the same user (prevents unnecessary re-fetch)
+      if (event === 'SIGNED_IN') {
+        if (!setupAuthCompletedRef.current) {
+          console.log("Skipping SIGNED_IN - waiting for setupAuth() to complete");
+          return;
+        }
+        // If user is already set and it's the same user, skip to avoid unnecessary work
+        if (user && session?.user && user.id === session.user.id) {
+          console.log("Skipping SIGNED_IN - user already set:", user.email);
+          return;
+        }
+      }
+      
       // Cleanup old subscription if user changed
       if (activeSubscription) {
         supabase.removeChannel(activeSubscription);
@@ -195,12 +210,17 @@ const App: React.FC = () => {
           
           if (!profile) {
             console.error("Failed to get/create profile on auth change");
-            setUser(null);
+            // Don't clear user if one already exists - might be a temporary network issue
+            // Only clear if we're sure this is a different user or the session is invalid
+            if (!user || user.id !== session.user.id) {
+              setUser(null);
+            }
             setIsAuthLoading(false);
             return;
           }
           
           setUser(profile);
+          console.log("✅ User set in onAuthStateChange:", profile.email, "ID:", profile.id, "Event:", event);
           
           // Clean up URL hash if it's an auth redirect
           if (window.location.hash && window.location.hash.includes('access_token')) {
