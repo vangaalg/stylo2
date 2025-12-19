@@ -508,6 +508,17 @@ const App: React.FC = () => {
     getFiveStarCount().then(setFiveStarCount);
   }, []);
 
+  // Load stored face photos when user is available
+  useEffect(() => {
+    const loadFacePhotos = async () => {
+      if (user?.id && user.id !== 'test-guest-id') {
+        const photos = await getUserFacePhotos(user.id);
+        setStoredFacePhotos(photos);
+      }
+    };
+    loadFacePhotos();
+  }, [user?.id]);
+
   // Load history from Supabase on mount (if user exists)
   useEffect(() => {
     const loadHistory = async () => {
