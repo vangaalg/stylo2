@@ -423,6 +423,7 @@ const App: React.FC = () => {
   const [userImage, setUserImage] = useState<string | null>(null);
   const [userAnalysis, setUserAnalysis] = useState<UserAnalysis | null>(null);
   const [storedFacePhotos, setStoredFacePhotos] = useState<Array<{id: string, image_url: string, created_at: string}>>([]);
+  const [selectedStoredPhotoUrl, setSelectedStoredPhotoUrl] = useState<string | null>(null);
   
   const [clothImage, setClothImage] = useState<string | null>(null);
   const [clothAnalysis, setClothAnalysis] = useState<ClothAnalysis | null>(null);
@@ -1077,8 +1078,40 @@ const App: React.FC = () => {
   };
 
   const handleSelectStoredFace = async (imageUrl: string) => {
-    setUserImage(imageUrl);
-    await processUserImage(imageUrl);
+    try {
+      setIsLoading(true);
+      setLoadingMessage("Loading photo...");
+      
+      // Fetch image from Supabase and convert to base64
+      // This avoids CORS issues with canvas
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error('Failed to fetch image');
+      }
+      
+      const blob = await response.blob();
+      const reader = new FileReader();
+      
+      reader.onload = async (event) => {
+        const base64 = event.target?.result as string;
+        setUserImage(base64);
+        setSelectedStoredPhotoUrl(imageUrl); // Track which photo was selected
+        await processUserImage(base64);
+      };
+      
+      reader.onerror = () => {
+        setError("⚠️ Failed to load stored photo. Please try uploading a new photo.");
+        setIsLoading(false);
+        setLoadingMessage("");
+      };
+      
+      reader.readAsDataURL(blob);
+    } catch (error) {
+      console.error('Error loading stored face photo:', error);
+      setError("⚠️ Failed to load stored photo. Please try uploading a new photo.");
+      setIsLoading(false);
+      setLoadingMessage("");
+    }
   };
 
   const processUserImage = async (base64: string) => {
@@ -2030,21 +2063,21 @@ const App: React.FC = () => {
       {storedFacePhotos.length > 0 && (
         <div className="mt-8">
           <h4 className="text-sm font-semibold text-zinc-400 mb-3">Recently Used Face Photos</h4>
-          <div className="grid grid-cols-5 gap-3">
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
             {storedFacePhotos.map((photo) => (
               <div key={photo.id} className="relative group">
                 <label className="cursor-pointer block">
                   <input
                     type="checkbox"
-                    checked={userImage === photo.image_url}
+                    checked={selectedStoredPhotoUrl === photo.image_url}
                     onChange={() => handleSelectStoredFace(photo.image_url)}
                     className="absolute top-2 left-2 z-10 w-5 h-5 accent-indigo-500 cursor-pointer"
                   />
                   <img
                     src={photo.image_url}
                     alt="Stored face"
-                    className={`w-full h-24 object-cover rounded-lg border-2 transition ${
-                      userImage === photo.image_url
+                    className={`w-full h-32 md:h-40 object-cover rounded-lg border-2 transition ${
+                      selectedStoredPhotoUrl === photo.image_url
                         ? 'border-indigo-500 ring-2 ring-indigo-500'
                         : 'border-zinc-700 hover:border-zinc-600'
                     }`}
