@@ -838,6 +838,115 @@ export const uploadSupportAttachment = async (
 
 // --- Notifications ---
 
+// --- Face Photos Storage ---
+
+// Save face photo to Supabase Storage and database
+export const saveFacePhoto = async (userId: string, imageDataUrl: string, userEmail?: string): Promise<string | null> => {
+  try {
+    // Upload to Supabase Storage (in face-photos subfolder)
+    const username = userEmail 
+      ? userEmail.split('@')[0].replace(/[^a-zA-Z0-9]/g, '_') 
+      : 'user';
+    
+    const now = new Date();
+    const dateStr = now.toISOString()
+      .replace(/[-:]/g, '')
+      .replace('T', '_')
+      .split('.')[0];
+    
+    const fileName = `${userId}/face-photos/${username}_${dateStr}.png`;
+    
+    // Convert Data URL to Blob
+    const res = await fetch(imageDataUrl);
+    const blob = await res.blob();
+    
+    // Upload to storage
+    const { data, error } = await supabase.storage
+      .from('generated-images')
+      .upload(fileName, blob, {
+        contentType: 'image/png',
+        upsert: false
+      });
+    
+    if (error) {
+      // If file already exists, skip upload but still save metadata
+      if (error.message?.includes('already exists')) {
+        console.log('Face photo already exists in storage, skipping upload');
+      } else {
+        throw error;
+      }
+    }
+    
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('generated-images')
+      .getPublicUrl(fileName);
+    
+    // Save metadata to database (use upsert to handle duplicates)
+    const { error: dbError } = await supabase
+      .from('user_face_photos')
+      .upsert({
+        user_id: userId,
+        image_url: publicUrl
+      }, {
+        onConflict: 'user_id,image_url'
+      });
+    
+    if (dbError) {
+      console.error('Error saving face photo metadata:', dbError);
+      // Continue even if DB save fails - image is uploaded
+    }
+    
+    // Keep only last 10 photos per user
+    const { data: allPhotos } = await supabase
+      .from('user_face_photos')
+      .select('id')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    
+    if (allPhotos && allPhotos.length > 10) {
+      // Delete oldest photos (keep only 10)
+      const photosToDelete = allPhotos.slice(10);
+      for (const photo of photosToDelete) {
+        await supabase
+          .from('user_face_photos')
+          .delete()
+          .eq('id', photo.id);
+        // Optionally delete from storage too (for cleanup)
+      }
+    }
+    
+    return publicUrl;
+  } catch (error: any) {
+    console.error('Error saving face photo:', error);
+    return null;
+  }
+};
+
+// Get last 10 face photos for a user
+export const getUserFacePhotos = async (userId: string): Promise<Array<{id: string, image_url: string, created_at: string}>> => {
+  try {
+    const { data, error } = await supabase
+      .from('user_face_photos')
+      .select('id, image_url, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+    
+    if (error) {
+      console.error('Error fetching face photos:', error);
+      return [];
+    }
+    
+    return data || [];
+  } catch (error) {
+    console.error('Error in getUserFacePhotos:', error);
+    return [];
+  }
+};
+
+// --- Notifications ---
+
 export interface Notification {
   id: string;
   user_id: string;

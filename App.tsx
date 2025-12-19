@@ -27,7 +27,9 @@ import {
   saveTransaction,
   getUserTransactions,
   markIntroPackPurchased,
-  getUnreadNotificationCount
+  getUnreadNotificationCount,
+  saveFacePhoto,
+  getUserFacePhotos
 } from './services/userService';
 import { swapFaceWithReplicate } from './services/replicateService';
 import { supabase, signOut } from './services/supabaseClient'; // Added supabase and signOut
