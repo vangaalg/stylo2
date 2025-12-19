@@ -1054,16 +1054,23 @@ const App: React.FC = () => {
       const base64 = event.target?.result as string;
       setUserImage(base64);
       
-      // Save to Supabase if user is logged in
+      // Save to Supabase if user is logged in (non-blocking - don't wait for it)
       if (user && user.id !== 'test-guest-id') {
-        const savedUrl = await saveFacePhoto(user.id, base64, user.email);
-        if (savedUrl) {
-          // Reload face photos list
-          const photos = await getUserFacePhotos(user.id);
-          setStoredFacePhotos(photos);
-        }
+        saveFacePhoto(user.id, base64, user.email)
+          .then(async (savedUrl) => {
+            if (savedUrl) {
+              // Reload face photos list
+              const photos = await getUserFacePhotos(user.id);
+              setStoredFacePhotos(photos);
+            }
+          })
+          .catch((error) => {
+            // Don't block upload if saving fails (table might not exist yet)
+            console.warn('Failed to save face photo to Supabase (non-critical):', error);
+          });
       }
       
+      // Process image immediately (don't wait for Supabase save)
       processUserImage(base64);
     };
     reader.readAsDataURL(file);
