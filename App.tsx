@@ -7,6 +7,7 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { SupportModal } from './components/SupportModal';
 import { NotificationCenter } from './components/NotificationCenter';
 import { SupportSection } from './components/SupportSection';
+import { ProductCatalog } from './components/ProductCatalog';
 import { 
   analyzeUserFace, 
   analyzeClothItem, 
@@ -481,6 +482,8 @@ const App: React.FC = () => {
   
   // UI State
   const [showCamera, setShowCamera] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [selectedCatalogProductId, setSelectedCatalogProductId] = useState<string | null>(null);
   const [showAdminDashboard, setShowAdminDashboard] = useState(false);
   const [showHeadwearChoice, setShowHeadwearChoice] = useState(false);
   const [preserveHeadwear, setPreserveHeadwear] = useState<boolean | null>(null);
@@ -1161,6 +1164,50 @@ const App: React.FC = () => {
       processClothImage(base64);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleCatalogProductSelect = async (product: any) => {
+    try {
+      setIsLoading(true);
+      setLoadingMessage("Loading product image...");
+      setError(null);
+
+      // Fetch product image and convert to base64
+      const response = await fetch(product.image_url);
+      if (!response.ok) {
+        throw new Error('Failed to fetch product image');
+      }
+
+      const blob = await response.blob();
+      const reader = new FileReader();
+
+      reader.onloadend = async () => {
+        try {
+          const base64 = reader.result as string;
+          setClothImage(base64);
+          setSelectedCatalogProductId(product.id);
+          await processClothImage(base64);
+        } catch (error) {
+          console.error('Error processing catalog product:', error);
+          setError("⚠️ Failed to load product image. Please try another product.");
+          setIsLoading(false);
+          setLoadingMessage("");
+        }
+      };
+
+      reader.onerror = () => {
+        setError("⚠️ Failed to load product image. Please try another product.");
+        setIsLoading(false);
+        setLoadingMessage("");
+      };
+
+      reader.readAsDataURL(blob);
+    } catch (error) {
+      console.error('Error selecting catalog product:', error);
+      setError("⚠️ Failed to load product. Please try again.");
+      setIsLoading(false);
+      setLoadingMessage("");
+    }
   };
 
   const processClothImage = async (base64: string) => {
@@ -2129,6 +2176,12 @@ const App: React.FC = () => {
           >
             Use Camera
           </button>
+          <button 
+            onClick={() => setShowCatalog(!showCatalog)}
+            className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-semibold hover:bg-indigo-700 transition shadow-lg hover:shadow-indigo-500/20"
+          >
+            {showCatalog ? 'Hide Catalog' : 'Browse Catalog'}
+          </button>
         </div>
         
         <input 
@@ -2154,6 +2207,16 @@ const App: React.FC = () => {
           Back to Face Upload
         </button>
       </div>
+
+      {/* Catalog Browse Section */}
+      {showCatalog && (
+        <div className="mt-8 pt-8 border-t border-zinc-800">
+          <ProductCatalog
+            onSelectProduct={handleCatalogProductSelect}
+            selectedProductId={selectedCatalogProductId}
+          />
+        </div>
+      )}
     </div>
   );
 

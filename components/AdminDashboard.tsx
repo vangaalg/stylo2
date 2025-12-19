@@ -12,12 +12,13 @@ import {
   getUserSupportTicketsForAdmin,
   type UserDetailedStats
 } from '../services/userService';
+import { CatalogApproval } from './CatalogApproval';
 
 interface AdminDashboardProps {
   onClose: () => void;
 }
 
-type Tab = 'users' | 'performance' | 'support';
+type Tab = 'users' | 'performance' | 'support' | 'catalog';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
   const [activeTab, setActiveTab] = useState<Tab>('users');
@@ -292,11 +293,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onClose }) => {
           >
             Support Tickets
           </button>
+          <button
+            onClick={() => setActiveTab('catalog')}
+            className={`px-6 py-3 text-sm font-semibold transition ${
+              activeTab === 'catalog'
+                ? 'text-indigo-400 border-b-2 border-indigo-400'
+                : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            Catalog Management
+          </button>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
-          {activeTab === 'users' ? (
+          {activeTab === 'catalog' ? (
+            <CatalogApproval onClose={() => setActiveTab('users')} />
+          ) : activeTab === 'users' ? (
             <div className="space-y-6">
               {/* Message */}
               {message && (
