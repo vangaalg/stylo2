@@ -27,6 +27,17 @@ CREATE INDEX IF NOT EXISTS idx_pending_products_created ON pending_products(crea
 -- Enable RLS
 ALTER TABLE pending_products ENABLE ROW LEVEL SECURITY;
 
+-- Ensure is_user_admin function exists (safe to run multiple times)
+-- This function bypasses RLS to check admin status, preventing recursive RLS issues
+CREATE OR REPLACE FUNCTION is_user_admin(check_user_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+AS $$
+  SELECT COALESCE((SELECT is_admin FROM profiles WHERE id = check_user_id), false);
+$$;
+
 -- Safely create policies only if they don't exist (no destructive operations)
 DO $$
 BEGIN
@@ -38,13 +49,7 @@ BEGIN
     AND policyname = 'Admins can view all pending products'
   ) THEN
     CREATE POLICY "Admins can view all pending products" ON pending_products
-      FOR SELECT USING (
-        EXISTS (
-          SELECT 1 FROM profiles 
-          WHERE profiles.id = auth.uid() 
-          AND profiles.is_admin = true
-        )
-      );
+      FOR SELECT USING (is_user_admin(auth.uid()));
   END IF;
 
   -- Create UPDATE policy if it doesn't exist
@@ -55,13 +60,7 @@ BEGIN
     AND policyname = 'Admins can update pending products'
   ) THEN
     CREATE POLICY "Admins can update pending products" ON pending_products
-      FOR UPDATE USING (
-        EXISTS (
-          SELECT 1 FROM profiles 
-          WHERE profiles.id = auth.uid() 
-          AND profiles.is_admin = true
-        )
-      );
+      FOR UPDATE USING (is_user_admin(auth.uid()));
   END IF;
 
   -- Create INSERT policy if it doesn't exist
@@ -72,13 +71,7 @@ BEGIN
     AND policyname = 'Admins can insert pending products'
   ) THEN
     CREATE POLICY "Admins can insert pending products" ON pending_products
-      FOR INSERT WITH CHECK (
-        EXISTS (
-          SELECT 1 FROM profiles 
-          WHERE profiles.id = auth.uid() 
-          AND profiles.is_admin = true
-        )
-      );
+      FOR INSERT WITH CHECK (is_user_admin(auth.uid()));
   END IF;
 END $$;
 
