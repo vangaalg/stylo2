@@ -1054,6 +1054,7 @@ const App: React.FC = () => {
     reader.onload = async (event) => {
       const base64 = event.target?.result as string;
       setUserImage(base64);
+      setSelectedStoredPhotoUrl(null); // Clear stored photo selection when uploading new
       
       // Save to Supabase if user is logged in (non-blocking - don't wait for it)
       if (user && user.id !== 'test-guest-id') {
