@@ -48,6 +48,63 @@ export const CatalogApproval: React.FC<CatalogApprovalProps> = ({ onClose }) => 
     filterProducts();
   }, [statusFilter, pendingProducts]);
 
+  // Auto-extract product data from URL
+  useEffect(() => {
+    if (newProduct.source_url && !newProduct.name) {
+      try {
+        const urlObj = new URL(newProduct.source_url);
+        const hostname = urlObj.hostname.toLowerCase();
+        
+        // Detect source
+        let source: 'ajio' | 'myntra' = 'ajio';
+        if (hostname.includes('myntra')) {
+          source = 'myntra';
+        }
+        
+        // Extract product name from URL path
+        const pathParts = urlObj.pathname.split('/').filter(p => p);
+        let productName = '';
+        
+        if (source === 'ajio') {
+          // Ajio URL format: /product-name/p/product-id
+          // Find the part before /p/
+          const pIndex = pathParts.indexOf('p');
+          if (pIndex > 0) {
+            productName = pathParts[pIndex - 1]
+              .split('-')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+          }
+        } else if (source === 'myntra') {
+          // Myntra URL format: /product-name/product-id
+          // Usually the last meaningful part before numbers
+          for (let i = pathParts.length - 1; i >= 0; i--) {
+            const part = pathParts[i];
+            if (part && !part.match(/^\d+$/)) {
+              productName = part
+                .split('-')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+              break;
+            }
+          }
+        }
+        
+        // Update form if we extracted data
+        if (productName || source !== newProduct.source) {
+          setNewProduct(prev => ({
+            ...prev,
+            source,
+            name: prev.name || productName,
+          }));
+        }
+      } catch (error) {
+        // Invalid URL, ignore
+        console.log('Could not extract data from URL:', error);
+      }
+    }
+  }, [newProduct.source_url]);
+
   const loadPendingProducts = async () => {
     try {
       setLoading(true);
@@ -223,6 +280,8 @@ export const CatalogApproval: React.FC<CatalogApprovalProps> = ({ onClose }) => 
 
     try {
       setLoading(true);
+      setMessage(null); // Clear previous messages
+      
       await addProductToPending({
         source_url: newProduct.source_url,
         image_url: newProduct.image_url,
@@ -246,10 +305,12 @@ export const CatalogApproval: React.FC<CatalogApprovalProps> = ({ onClose }) => 
         subcategory: '',
         source: 'ajio',
       });
-      loadPendingProducts();
-    } catch (error) {
+      await loadPendingProducts(); // Wait for reload to complete
+    } catch (error: any) {
       console.error('Error adding product:', error);
-      setMessage({ type: 'error', text: 'Failed to add product' });
+      // Show detailed error message
+      const errorMessage = error?.message || error?.error?.message || 'Failed to add product. Please check console for details.';
+      setMessage({ type: 'error', text: `Error: ${errorMessage}` });
     } finally {
       setLoading(false);
     }
@@ -290,9 +351,10 @@ export const CatalogApproval: React.FC<CatalogApprovalProps> = ({ onClose }) => 
             </button>
             <button
               onClick={onClose}
-              className="p-2 hover:bg-zinc-800 rounded-full transition"
+              className="p-2 hover:bg-red-900/20 rounded-full transition group"
+              title="Close"
             >
-              <svg className="w-6 h-6 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-6 h-6 text-zinc-400 group-hover:text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
