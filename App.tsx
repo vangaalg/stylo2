@@ -2018,6 +2018,37 @@ const App: React.FC = () => {
           Android: If gallery is empty, try "Browse" to find your photos.
         </p>
       </div>
+      
+      {/* Last 10 Uploaded Face Photos */}
+      {storedFacePhotos.length > 0 && (
+        <div className="mt-8">
+          <h4 className="text-sm font-semibold text-zinc-400 mb-3">Recently Used Face Photos</h4>
+          <div className="grid grid-cols-5 gap-3">
+            {storedFacePhotos.map((photo) => (
+              <div key={photo.id} className="relative group">
+                <label className="cursor-pointer block">
+                  <input
+                    type="checkbox"
+                    checked={userImage === photo.image_url}
+                    onChange={() => handleSelectStoredFace(photo.image_url)}
+                    className="absolute top-2 left-2 z-10 w-5 h-5 accent-indigo-500 cursor-pointer"
+                  />
+                  <img
+                    src={photo.image_url}
+                    alt="Stored face"
+                    className={`w-full h-24 object-cover rounded-lg border-2 transition ${
+                      userImage === photo.image_url
+                        ? 'border-indigo-500 ring-2 ring-indigo-500'
+                        : 'border-zinc-700 hover:border-zinc-600'
+                    }`}
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-zinc-500 mt-2">Check a photo to reuse it for multiple dresses</p>
+        </div>
+      )}
     </div>
   );
 
