@@ -2077,7 +2077,7 @@ const App: React.FC = () => {
                   <img
                     src={photo.image_url}
                     alt="Stored face"
-                    className={`w-full h-32 md:h-40 object-cover rounded-lg border-2 transition ${
+                    className={`w-full h-32 md:h-40 object-contain bg-zinc-900 rounded-lg border-2 transition ${
                       selectedStoredPhotoUrl === photo.image_url
                         ? 'border-indigo-500 ring-2 ring-indigo-500'
                         : 'border-zinc-700 hover:border-zinc-600'
