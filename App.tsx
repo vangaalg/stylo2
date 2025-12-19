@@ -422,6 +422,7 @@ const App: React.FC = () => {
   // Data State
   const [userImage, setUserImage] = useState<string | null>(null);
   const [userAnalysis, setUserAnalysis] = useState<UserAnalysis | null>(null);
+  const [storedFacePhotos, setStoredFacePhotos] = useState<Array<{id: string, image_url: string, created_at: string}>>([]);
   
   const [clothImage, setClothImage] = useState<string | null>(null);
   const [clothAnalysis, setClothAnalysis] = useState<ClothAnalysis | null>(null);
@@ -1041,9 +1042,25 @@ const App: React.FC = () => {
     reader.onload = async (event) => {
       const base64 = event.target?.result as string;
       setUserImage(base64);
+      
+      // Save to Supabase if user is logged in
+      if (user && user.id !== 'test-guest-id') {
+        const savedUrl = await saveFacePhoto(user.id, base64, user.email);
+        if (savedUrl) {
+          // Reload face photos list
+          const photos = await getUserFacePhotos(user.id);
+          setStoredFacePhotos(photos);
+        }
+      }
+      
       processUserImage(base64);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleSelectStoredFace = async (imageUrl: string) => {
+    setUserImage(imageUrl);
+    await processUserImage(imageUrl);
   };
 
   const processUserImage = async (base64: string) => {
