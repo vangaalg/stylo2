@@ -50,58 +50,92 @@ export const CatalogApproval: React.FC<CatalogApprovalProps> = ({ onClose }) => 
 
   // Auto-extract product data from URL
   useEffect(() => {
-    if (newProduct.source_url && !newProduct.name) {
-      try {
-        const urlObj = new URL(newProduct.source_url);
-        const hostname = urlObj.hostname.toLowerCase();
-        
-        // Detect source
-        let source: 'ajio' | 'myntra' = 'ajio';
-        if (hostname.includes('myntra')) {
-          source = 'myntra';
-        }
-        
-        // Extract product name from URL path
-        const pathParts = urlObj.pathname.split('/').filter(p => p);
-        let productName = '';
-        
-        if (source === 'ajio') {
-          // Ajio URL format: /product-name/p/product-id
-          // Find the part before /p/
-          const pIndex = pathParts.indexOf('p');
-          if (pIndex > 0) {
-            productName = pathParts[pIndex - 1]
-              .split('-')
-              .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-              .join(' ');
+    if (newProduct.source_url) {
+      const extractData = async () => {
+        try {
+          const urlObj = new URL(newProduct.source_url);
+          const hostname = urlObj.hostname.toLowerCase();
+          
+          // Detect source
+          let source: 'ajio' | 'myntra' = 'ajio';
+          if (hostname.includes('myntra')) {
+            source = 'myntra';
           }
-        } else if (source === 'myntra') {
-          // Myntra URL format: /product-name/product-id
-          // Usually the last meaningful part before numbers
-          for (let i = pathParts.length - 1; i >= 0; i--) {
-            const part = pathParts[i];
-            if (part && !part.match(/^\d+$/)) {
-              productName = part
+          
+          // Extract product name from URL path
+          const pathParts = urlObj.pathname.split('/').filter(p => p);
+          let productName = '';
+          
+          if (source === 'ajio') {
+            // Ajio URL format: /product-name/p/product-id
+            // Find the part before /p/
+            const pIndex = pathParts.indexOf('p');
+            if (pIndex > 0) {
+              productName = pathParts[pIndex - 1]
                 .split('-')
                 .map(word => word.charAt(0).toUpperCase() + word.slice(1))
                 .join(' ');
-              break;
+            }
+          } else if (source === 'myntra') {
+            // Myntra URL format: /product-name/product-id
+            // Usually the last meaningful part before numbers
+            for (let i = pathParts.length - 1; i >= 0; i--) {
+              const part = pathParts[i];
+              if (part && !part.match(/^\d+$/)) {
+                productName = part
+                  .split('-')
+                  .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                  .join(' ');
+                break;
+              }
             }
           }
+          
+          // Try to fetch price from page (may fail due to CORS)
+          let fetchedPrice = '';
+          try {
+            // Use a CORS proxy or try direct fetch
+            const response = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(newProduct.source_url)}`);
+            if (response.ok) {
+              const data = await response.json();
+              const html = data.contents;
+              
+              // Try to extract price from HTML
+              if (source === 'ajio') {
+                // Ajio price patterns
+                const priceMatch = html.match(/₹[\d,]+|Rs\.?\s*[\d,]+/i);
+                if (priceMatch) {
+                  fetchedPrice = priceMatch[0].replace(/[₹Rs.,\s]/gi, '');
+                }
+              } else if (source === 'myntra') {
+                // Myntra price patterns
+                const priceMatch = html.match(/₹[\d,]+|Rs\.?\s*[\d,]+/i);
+                if (priceMatch) {
+                  fetchedPrice = priceMatch[0].replace(/[₹Rs.,\s]/gi, '');
+                }
+              }
+            }
+          } catch (fetchError) {
+            // Price fetch failed, that's okay - user can enter manually
+            console.log('Could not fetch price from page:', fetchError);
+          }
+          
+          // Update form if we extracted data
+          if (productName || source !== newProduct.source || fetchedPrice) {
+            setNewProduct(prev => ({
+              ...prev,
+              source,
+              name: prev.name || productName,
+              price: prev.price || fetchedPrice,
+            }));
+          }
+        } catch (error) {
+          // Invalid URL, ignore
+          console.log('Could not extract data from URL:', error);
         }
-        
-        // Update form if we extracted data
-        if (productName || source !== newProduct.source) {
-          setNewProduct(prev => ({
-            ...prev,
-            source,
-            name: prev.name || productName,
-          }));
-        }
-      } catch (error) {
-        // Invalid URL, ignore
-        console.log('Could not extract data from URL:', error);
-      }
+      };
+      
+      extractData();
     }
   }, [newProduct.source_url]);
 
@@ -282,7 +316,15 @@ export const CatalogApproval: React.FC<CatalogApprovalProps> = ({ onClose }) => 
       setLoading(true);
       setMessage(null); // Clear previous messages
       
-      await addProductToPending({
+      console.log('Adding product:', {
+        source_url: newProduct.source_url,
+        image_url: newProduct.image_url,
+        name: newProduct.name,
+        category: newProduct.category,
+        source: newProduct.source,
+      });
+      
+      const result = await addProductToPending({
         source_url: newProduct.source_url,
         image_url: newProduct.image_url,
         name: newProduct.name,
@@ -292,6 +334,8 @@ export const CatalogApproval: React.FC<CatalogApprovalProps> = ({ onClose }) => 
         subcategory: newProduct.subcategory || undefined,
         source: newProduct.source,
       });
+
+      console.log('Product added successfully:', result);
 
       setMessage({ type: 'success', text: 'Product added to pending queue!' });
       setShowAddProduct(false);
@@ -307,10 +351,33 @@ export const CatalogApproval: React.FC<CatalogApprovalProps> = ({ onClose }) => 
       });
       await loadPendingProducts(); // Wait for reload to complete
     } catch (error: any) {
-      console.error('Error adding product:', error);
+      console.error('Error adding product - Full error:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        error: error?.error,
+        code: error?.code,
+        details: error?.details,
+        hint: error?.hint,
+      });
+      
       // Show detailed error message
-      const errorMessage = error?.message || error?.error?.message || 'Failed to add product. Please check console for details.';
-      setMessage({ type: 'error', text: `Error: ${errorMessage}` });
+      let errorMessage = 'Failed to add product. ';
+      if (error?.message) {
+        errorMessage += error.message;
+      } else if (error?.error?.message) {
+        errorMessage += error.error.message;
+      } else if (error?.code) {
+        errorMessage += `Error code: ${error.code}`;
+      } else {
+        errorMessage += 'Please check console for details.';
+      }
+      
+      // Check for common RLS errors
+      if (error?.code === '42501' || error?.message?.includes('permission') || error?.message?.includes('policy')) {
+        errorMessage += ' (Permission denied - make sure you are logged in as admin)';
+      }
+      
+      setMessage({ type: 'error', text: errorMessage });
     } finally {
       setLoading(false);
     }
