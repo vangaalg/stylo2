@@ -1014,6 +1014,13 @@ const App: React.FC = () => {
          setUser({ ...user, credits: newBalance });
       }
       setShowPayment(false);
+      
+      // Restore to RESULTS page if user has generated images
+      // This ensures the album page is shown after payment
+      if (userImage && clothImage && generatedImages.some(img => img?.url)) {
+        setStep(AppStep.RESULTS);
+        console.log("✅ Restored to RESULTS page after payment - generated images preserved");
+      }
     } catch (e) {
       console.error("Failed to update credits or save transaction", e);
     }
